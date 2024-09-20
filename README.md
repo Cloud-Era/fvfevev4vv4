@@ -1,3 +1,10 @@
+To retrieve **code scanning alerts** in a similar way to how the **Dependabot alerts** are fetched at the enterprise level, you can create a script that aggregates code scanning alerts across all repositories in an organization or enterprise. However, you'll still need to fetch them one repository at a time since the GitHub API for code scanning alerts is not available at the enterprise level directly.
+
+Here's a revised script that collects code scanning alerts for each repository in an organization and handles pagination, similar to the Dependabot alerts script.
+
+### Code Scanning Alerts Script
+
+```python
 import os
 import json
 import requests
@@ -78,3 +85,20 @@ def main():
 
 if __name__ == "__main__":
     main()
+```
+
+### Key Points:
+1. **Repository Retrieval**:
+   - The script first fetches all repositories in the specified organization using the `getRepositories` function, handling pagination.
+
+2. **Fetching Code Scanning Alerts**:
+   - For each repository, it retrieves code scanning alerts using the `getCodeScanningAlertsRepo` function, which also handles pagination.
+   - If a repository has no analysis (404), it logs a message and continues to the next repository.
+
+3. **CSV Output**:
+   - All collected alerts are written to a CSV file named `CodeScanningAlerts_<current_date>.csv` in the current directory.
+
+4. **Access Token**:
+   - Ensure you set the `ACCESS_TOKEN` environment variable with your GitHub token that has the necessary permissions.
+
+This script efficiently collects all code scanning alerts across an organization while properly managing pagination and error handling.
