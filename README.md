@@ -1,4 +1,4 @@
-Here's a revised version of the script that focuses solely on retrieving code scanning alerts, addressing the issue of missing severity levels:
+Here’s the full script for fetching Code Scanning alerts, including logging to help you debug the number of alerts retrieved:
 
 ```python
 import os
@@ -26,7 +26,9 @@ def getCodeScanningAlertsEnterprise(enterprise, token, org, page=1):
 
     data = res.json()
     alerts.extend(data)
+    print(f"Fetched {len(data)} alerts from page {page} for {org}")
 
+    # Check if there's another page of alerts
     if len(data) == 100:
         alerts.extend(getCodeScanningAlertsEnterprise(enterprise, token, org, page + 1))
 
@@ -85,22 +87,14 @@ if __name__ == "__main__":
     main()
 ```
 
-### Key Points:
+### Key Components:
+- **Logging**: The script logs the request URL, response status, number of alerts fetched per page, and checks for duplicates.
+- **CSV Output**: Alerts are written to a CSV file in the current directory, including various details for each alert.
+- **Pagination**: The function handles pagination automatically.
 
-- **Severity Handling**: The script now checks for the presence of a `severity` field within the `rule` dictionary of each alert. If it's not present, it defaults to 'Unknown'.
-  
-- **Pagination**: The function `getCodeScanningAlertsEnterprise` handles pagination by recursively fetching additional pages if there are more than 100 alerts.
+### Usage:
+1. Set your GitHub token in the `ACCESS_TOKEN` environment variable.
+2. Update `enterprise_name` and `org_list` with your actual enterprise and organization names.
+3. Run the script, and it will generate a CSV file in the current directory.
 
-- **CSV Output**: The script writes the retrieved data to a CSV file named `CodeScanning_Alerts_<current_date>.csv`.
-
-Ensure you replace `"your_enterprise"` and the organization names in `org_list` with actual values. Also, make sure your GitHub access token is set as an environment variable named `ACCESS_TOKEN`. This script should help you capture all code scanning alerts along with their severity levels.
-
-Citations:
-[1] https://docs.github.com/en/code-security/code-scanning/managing-code-scanning-alerts/about-code-scanning-alerts
-[2] https://learn.microsoft.com/en-us/azure/devops/repos/security/github-advanced-security-code-scanning?view=azure-devops
-[3] https://docs.github.com/en/code-security/code-scanning/managing-code-scanning-alerts/managing-code-scanning-alerts-for-your-repository
-[4] https://docs.github.com/en/code-security/code-scanning/managing-code-scanning-alerts/triaging-code-scanning-alerts-in-pull-requests
-[5] https://github.blog/changelog/2021-07-19-codeql-code-scanning-new-severity-levels-for-security-alerts/
-[6] https://docs.github.com/en/code-security/code-scanning/managing-code-scanning-alerts
-[7] https://docs.github.com/en/code-security/code-scanning/managing-code-scanning-alerts/tracking-code-scanning-alerts-in-issues-using-task-lists
-[8] https://docs.github.com/en/code-security/code-scanning/introduction-to-code-scanning/about-code-scanning
+If you have any further questions or need additional modifications, feel free to ask!
