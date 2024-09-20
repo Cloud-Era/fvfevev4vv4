@@ -1,130 +1,148 @@
-Certainly! I'll provide a comprehensive overview of the script, its functions, and suggest some potential improvements.
+It seems like the script might be generating duplicate rows or processing data in a way that leads to an inflated number of rows in the CSV. To troubleshoot the issue, let's focus on a few key areas where the problem might arise:
 
-### Script Overview
+### Potential Issues:
+1. **Duplicate Alerts**: If the script is fetching the same alerts multiple times due to pagination or mis-handling of responses, this could explain the inflated row count.
+2. **Multiple Ecosystems or Components**: If each alert includes multiple packages or vulnerabilities, the script may be outputting more rows per alert than necessary.
+3. **Pagination**: The script uses pagination, but if not handled properly, it may re-fetch the same alerts across multiple pages, leading to duplication.
 
-This script fetches Dependabot alerts from GitHub Enterprise and saves them to a CSV file. Here's a breakdown of its components:
+### Steps to Investigate and Fix:
+1. **Check for Duplicate Data**:
+   - Ensure that each alert is only written once to the CSV by keeping track of the unique alert IDs.
+   
+2. **Simplify the Data Handling**:
+   - Review if each alert in the response is being expanded into multiple rows unnecessarily.
 
-1. **Imports**: The script uses various Python libraries for HTTP requests, CSV handling, logging, and type hinting.
+3. **Logging for Debugging**:
+   - Add some logging to verify what data is being processed and how many unique alerts are actually fetched.
 
-2. **Logging**: Configured to log information and errors for debugging.
+Let’s start by adding logging and making sure each alert is only processed once.
 
-3. **API Request Function**: `make_api_request` handles HTTP GET requests to the GitHub API.
-
-4. **Alert Fetching**: `get_dependabot_alerts_enterprise` recursively fetches all Dependabot alerts for an enterprise.
-
-5. **Data Processing**: 
-   - `get_first_patched_version` extracts the first patched version information.
-   - `get_cvss_version` extracts the CVSS version from the vector string.
-   - `process_alert` transforms raw alert data into a structured dictionary.
-
-6. **Main Function**: Orchestrates the entire process of fetching alerts and writing to CSV.
-
-### Detailed Function Explanations
-
-1. `make_api_request(url: str, token: str) -> Dict[str, Any]`:
-   - Makes a GET request to the GitHub API.
-   - Uses the provided token for authentication.
-   - Returns the JSON response.
-
-2. `get_dependabot_alerts_enterprise(enterprise: str, token: str, page: int = 1) -> List[Dict[str, Any]]`:
-   - Fetches Dependabot alerts for an enterprise.
-   - Handles pagination by recursively calling itself.
-   - Returns a list of all alerts.
-
-3. `get_first_patched_version(alert: Dict[str, Any]) -> str`:
-   - Extracts the first patched version from an alert.
-   - Handles cases where the information might be missing.
-
-4. `get_cvss_version(alert: Dict[str, Any]) -> str`:
-   - Extracts the CVSS version from the vector string.
-   - Uses regex to parse the version.
-
-5. `process_alert(alert: Dict[str, Any]) -> Dict[str, str]`:
-   - Transforms a raw alert into a structured dictionary.
-   - Handles missing data by providing default values.
-
-6. `main()`:
-   - Entry point of the script.
-   - Fetches alerts, processes them, and writes to CSV.
-   - Handles exceptions and logs errors.
-
-### Potential Improvements
-
-1. **Parallel Processing**: For large enterprises, fetching alerts could be slow. Consider using `concurrent.futures` to parallelize API requests.
-
-2. **Rate Limiting**: Implement rate limiting to avoid hitting GitHub API limits.
-
-3. **Configurable Enterprise and Output**: Allow users to specify the enterprise name and output file path as command-line arguments.
-
-4. **Data Validation**: Add more robust data validation to ensure all required fields are present.
-
-5. **Retry Mechanism**: Implement a retry mechanism for failed API requests.
-
-6. **Incremental Updates**: Instead of fetching all alerts each time, implement a way to fetch only new or updated alerts since the last run.
-
-7. **Error Reporting**: Enhance error reporting, possibly sending email notifications for critical errors.
-
-8. **Progress Bar**: For long-running processes, add a progress bar using a library like `tqdm`.
-
-9. **Caching**: Implement caching of API responses to reduce load on GitHub's servers for frequent runs.
-
-10. **Unit Tests**: Add unit tests to ensure reliability of individual functions.
-
-Here's an example of how you might implement some of these improvements:
+### Updated Script with Duplicate Check and Debug Logging:
 
 ```python
-import argparse
-import concurrent.futures
-from tqdm import tqdm
+import os
+import json
+import requests
+import urllib3
+import csv
+import datetime
+import re
+import warnings
 
-def parse_arguments():
-    parser = argparse.ArgumentParser(description="Fetch Dependabot alerts from GitHub Enterprise")
-    parser.add_argument("--enterprise", required=True, help="Name of the GitHub Enterprise")
-    parser.add_argument("--output", default="vulnerabilities.csv", help="Output CSV file path")
-    return parser.parse_args()
+warnings.filterwarnings("ignore")
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-def fetch_alerts_with_retry(enterprise, token, page, max_retries=3):
-    for attempt in range(max_retries):
-        try:
-            return get_dependabot_alerts_enterprise(enterprise, token, page)
-        except requests.RequestException as e:
-            if attempt == max_retries - 1:
-                raise
-            logging.warning(f"Request failed, retrying (attempt {attempt + 1}/{max_retries})")
-            time.sleep(2 ** attempt)  # Exponential backoff
+# Function to get Dependabot alerts for the enterprise
+def getDependabotAlertsEnterprise(enterprise, token, org, page=1):
+    repo_urls = []
+    headers = {'Authorization': f"Bearer {token}", "Accept": "application/vnd.github+json"}
+    url = f"https://api.github.com/enterprises/{enterprise}/dependabot/alerts?per_page=100&page={page}&org={org}&state=open"
+    res = requests.get(url, headers=headers, verify=False)
 
+    # Debugging output
+    print(f"Request URL: {res.url}")
+    print(f"Response Status Code: {res.status_code}")
+
+    if res.status_code != 200:
+        raise Exception(f"Error: {res.status_code}, {res.text}")
+
+    if len(res.json()) == 100:
+        repo_urls += res.json()
+        repo_urls += getDependabotAlertsEnterprise(enterprise, token, org, page + 1)
+    else:
+        repo_urls += res.json()
+
+    return repo_urls
+
+# Main function to generate the CSV file for multiple organizations in the enterprise
 def main():
-    args = parse_arguments()
-    token = os.getenv("ACCESS_TOKEN")
-    if not token:
-        raise ValueError("ACCESS_TOKEN environment variable is not set")
-
-    try:
-        logging.info(f"Fetching dependabot alerts for enterprise '{args.enterprise}'")
-        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(fetch_alerts_with_retry, args.enterprise, token, page) for page in range(1, 6)]
-            alerts = []
-            for future in tqdm(concurrent.futures.as_completed(futures), total=len(futures), desc="Fetching alerts"):
-                alerts.extend(future.result())
-
-        logging.info(f"Fetched {len(alerts)} alerts")
-
-        with open(args.output, 'w', newline='', encoding='utf-8') as csvfile:
-            fieldnames = [...]  # Your fieldnames here
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            writer.writeheader()
-            
-            for alert in tqdm(alerts, desc="Processing alerts"):
-                writer.writerow(process_alert(alert))
-        
-        logging.info(f"CSV file has been saved: {args.output}")
+    headers = ["Organization", "Repository_Name", "Alert ID", "ComponentName", "Package Name", "Ecosystem", "Manifest_Path", "Vulnerability Rating", "ShortDescription", "Description", "Vulnerability ID", "First_Patched_Version", "Unique ID", "CVSS Rating", "CVSS Version", "Vulnerabilities List", "Identifiers", "Vulnerable Version Range", "Github URL", "Date Discovered", "Base_Repo_Name"]
     
-    except Exception as e:
-        logging.error(f"An error occurred: {e}")
-        sys.exit(1)
+    # Retrieve the access token and enterprise name from environment variables or hardcode them
+    GHToken = os.getenv("ACCESS_TOKEN")
+    enterprise_name = "your_enterprise"  # Replace with your enterprise name
+    
+    # List of organizations to collect Dependabot alerts from
+    org_list = ["org1", "org2"]  # Replace with your organization names
+
+    # Get the current working directory to save the CSV in the current folder
+    current_directory = os.getcwd()
+
+    # Set the path and name for the CSV file
+    current_date = datetime.datetime.now().strftime("%m-%d-%Y")
+    csv_file_path = os.path.join(current_directory, f"Vulnerabilities_{current_date}.csv")
+
+    # To track unique alerts and avoid duplicates
+    unique_alert_ids = set()
+
+    with open(csv_file_path, mode='w', newline='', encoding='utf-8') as file:
+        writer = csv.writer(file)
+        writer.writerow(headers)
+
+        for org in org_list:
+            dependaBotAlerts = getDependabotAlertsEnterprise(enterprise_name, GHToken, org)
+
+            # Write the Dependabot alerts for each organization to the CSV file
+            for alert in dependaBotAlerts:
+                if "dependency" in alert:
+                    alert_id = alert['number']
+                    repo_name = alert['repository']['full_name']
+
+                    # Check if this alert has already been written
+                    if (alert_id, repo_name) not in unique_alert_ids:
+                        unique_alert_ids.add((alert_id, repo_name))  # Track the unique alert ID and repo
+
+                        Vuln_ID = alert['security_advisory']['cve_id'] if alert['security_advisory']['cve_id'] else alert['security_advisory']['ghsa_id']
+                        CVSS_Version = re.search(r'CVSS:(.*?)V(\d)', str(alert['security_advisory']['cvss']['vector_string']))
+                        if CVSS_Version:
+                            CVSS_Version = CVSS_Version.group(1)
+                        writer.writerow([
+                            org,
+                            repo_name,
+                            f"GHASID-{alert_id}",
+                            f"{alert['dependency']['package']['ecosystem']}:{alert['dependency']['package']['name']}",
+                            alert['dependency']['package']['name'],
+                            alert['dependency']['package']['ecosystem'],
+                            alert['dependency']['manifest_path'],
+                            alert['security_advisory']['severity'],
+                            alert['security_advisory']['summary'].replace('\n', '').replace('\r', ''),
+                            alert['security_advisory']['description'].replace('\n', ' ').replace('\r', ' '),
+                            Vuln_ID,
+                            alert['security_vulnerability']['first_patched_version']['identifier'] if alert['security_vulnerability']['first_patched_version'] else "Not patched",
+                            f"GHASID-{alert_id}_{alert['dependency']['package']['name']}_{repo_name.replace('/', '_')}",
+                            alert['security_advisory']['cvss']['score'],
+                            CVSS_Version,
+                            str(alert['security_advisory']['vulnerabilities']),
+                            str(alert['security_advisory']['identifiers']),
+                            alert['security_vulnerability']['vulnerable_version_range'],
+                            alert['repository']['html_url'],
+                            alert['created_at'],
+                            alert['repository']['full_name'].split("/", 1)[0]
+                        ])
+                    else:
+                        print(f"Duplicate alert found: {alert_id} in {repo_name}")
+                else:
+                    print(f"No valid data for org: {org}, repo: {alert.get('repository', {}).get('full_name')}")
+
+    print(f"CSV file generated at: {csv_file_path}")
+    print(f"Total unique alerts written: {len(unique_alert_ids)}")
 
 if __name__ == "__main__":
     main()
 ```
 
-This improved version includes argument parsing, parallel processing, a retry mechanism, and progress bars. You can further enhance it based on your specific needs and the scale of your GitHub Enterprise.
+### Key Updates:
+1. **Tracking Unique Alerts**:
+   - The script uses a `unique_alert_ids` set to track each unique alert by its `alert_id` and `repo_name`. This ensures that the same alert is not written multiple times.
+   
+2. **Duplicate Check**:
+   - Before writing an alert to the CSV, the script checks if the `(alert_id, repo_name)` combination has already been processed.
+   
+3. **Logging**:
+   - The script prints a message if a duplicate alert is found and skips it. It also prints the total number of unique alerts processed after writing the CSV.
+
+### Next Steps:
+- **Run the updated script** and check the CSV file.
+- Ensure that the number of rows matches the expected number of unique open alerts in your enterprise.
+  
+This should resolve the issue of the inflated row count in the CSV. If the problem persists, you may want to check the GitHub API responses to ensure no alerts are being fetched multiple times across different pages.
