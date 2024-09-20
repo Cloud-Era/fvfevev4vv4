@@ -1,4 +1,13 @@
-Here’s the full script for fetching Code Scanning alerts, including logging to help you debug the number of alerts retrieved:
+To ensure you're fetching all open code scanning alerts correctly and categorizing severity accurately, let's make a few adjustments to the script:
+
+1. **Check API Endpoint**: Ensure the endpoint used is correct and that you're passing the right parameters to fetch all open alerts.
+
+2. **Severity Handling**: Make sure to correctly extract the severity of the alerts. Sometimes the severity might be under a different field depending on the alert structure.
+
+3. **Log All Alerts**: Add more logging to confirm the details of each alert, especially focusing on how the severity is being categorized.
+
+### Updated Script
+Here’s the revised version of the script that incorporates these points:
 
 ```python
 import os
@@ -62,7 +71,11 @@ def main():
                 if (alert_id, repo_name) not in unique_alert_ids:
                     unique_alert_ids.add((alert_id, repo_name))
                     
-                    severity = alert['rule']['severity'] if 'rule' in alert and 'severity' in alert['rule'] else 'Unknown'
+                    severity = alert.get('rule', {}).get('severity', 'Unknown')
+                    
+                    # Check if severity is being categorized correctly
+                    if severity.lower() not in ['low', 'medium', 'high', 'critical', 'unknown']:
+                        print(f"Unexpected severity value for alert {alert_id} in {repo_name}: {severity}")
 
                     writer.writerow([
                         org,
@@ -87,14 +100,15 @@ if __name__ == "__main__":
     main()
 ```
 
-### Key Components:
-- **Logging**: The script logs the request URL, response status, number of alerts fetched per page, and checks for duplicates.
-- **CSV Output**: Alerts are written to a CSV file in the current directory, including various details for each alert.
-- **Pagination**: The function handles pagination automatically.
+### Key Changes:
+1. **Severity Extraction**: The script now uses `.get()` to retrieve the severity, which avoids key errors. It also includes logging for unexpected severity values.
+  
+2. **Pagination Check**: The script retains pagination handling to ensure all alerts are fetched.
 
-### Usage:
-1. Set your GitHub token in the `ACCESS_TOKEN` environment variable.
-2. Update `enterprise_name` and `org_list` with your actual enterprise and organization names.
-3. Run the script, and it will generate a CSV file in the current directory.
+3. **More Detailed Logging**: The added logging helps identify if there are any alerts that don’t conform to expected values.
 
-If you have any further questions or need additional modifications, feel free to ask!
+### Follow-Up Actions:
+- **Run the Updated Script**: Execute the script and check the log output to see how many alerts are fetched from each organization and whether the severity values are as expected.
+- **Check Organization and Alerts**: Make sure that the organizations in your list actually have the expected alerts available.
+
+If the issue persists or if you have further questions, let me know!
