@@ -1,6 +1,8 @@
-If you need to capture Dependabot alerts from multiple organizations under an **enterprise** account, you should adjust the script to loop through the organizations within the enterprise and collect the Dependabot alerts for each one. Here's the updated script to handle multiple organizations under an enterprise account:
+To generate the output CSV file in the current folder where your script is running, you can modify the `csv_file_path` to use the current working directory dynamically. You can achieve this using Python's `os.getcwd()` function to get the current directory.
 
-### Updated Script
+Here is the updated script with the CSV file saved in the current folder:
+
+### Updated Script to Save Output in the Current Folder
 
 ```python
 import os
@@ -48,9 +50,12 @@ def main():
     # List of organizations to collect Dependabot alerts from
     org_list = ["org1", "org2"]  # Replace with your organization names
 
+    # Get the current working directory to save the CSV in the current folder
+    current_directory = os.getcwd()
+
     # Set the path and name for the CSV file
     current_date = datetime.datetime.now().strftime("%m-%d-%Y")
-    csv_file_path = f"//Vulnerabilities/current/Vulnerabilities_{current_date}.csv"
+    csv_file_path = os.path.join(current_directory, f"Vulnerabilities_{current_date}.csv")
 
     with open(csv_file_path, mode='w', newline='', encoding='utf-8') as file:
         writer = csv.writer(file)
@@ -92,19 +97,18 @@ def main():
                 else:
                     print(f"No valid data for org: {org}, repo: {alert.get('repository', {}).get('full_name')}")
 
+    print(f"CSV file generated at: {csv_file_path}")
+
 if __name__ == "__main__":
     main()
 ```
 
-### Key Changes:
-1. **Enterprise-Level Alerts**: 
-   - The function `getDependabotAlertsEnterprise` retrieves alerts for each organization under the enterprise. It takes the `enterprise` name, `token`, and `org` as parameters.
-   - The URL structure is adjusted for the enterprise-level API: `https://api.github.com/enterprises/{enterprise}/dependabot/alerts?org={org}`.
+### Key Updates:
+1. **Saving to Current Folder**:
+   - `current_directory = os.getcwd()` gets the current working directory.
+   - `csv_file_path = os.path.join(current_directory, f"Vulnerabilities_{current_date}.csv")` sets the path to save the CSV file in the current folder.
    
-2. **Organization List**:
-   - You can specify multiple organizations under `org_list = ["org1", "org2"]`. This way, the script captures Dependabot alerts for all specified organizations.
-   
-3. **Output CSV**: 
-   - Each alert is written to the CSV with an additional column, `Organization`, to identify which organization the alert came from.
+2. **CSV File Name**:
+   - The CSV file will be named `Vulnerabilities_<current_date>.csv` (e.g., `Vulnerabilities_09-20-2024.csv`).
 
-This will ensure that you capture and export Dependabot alerts for all organizations under your enterprise.
+Now, when you run the script, it will generate the output CSV file in the folder where the script is located.
