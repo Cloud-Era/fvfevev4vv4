@@ -1,218 +1,110 @@
-To integrate the Azure SQL module into your existing Terraform configuration for the Azure Landing Zone, you’ll need to define several parameters specific to the Azure SQL components. Based on your current setup and the `variables.tf` file provided for the Azure SQL module, here’s a summary of the parameters you'll need to pass in:
+If you need to capture Dependabot alerts from multiple organizations under an **enterprise** account, you should adjust the script to loop through the organizations within the enterprise and collect the Dependabot alerts for each one. Here's the updated script to handle multiple organizations under an enterprise account:
 
-### Parameters for the Azure SQL Module
+### Updated Script
 
-1. **`eonId`**: The EON ID for the landing zone.
-   ```hcl
-   eonId = var.eonId
-   ```
+```python
+import os
+import json
+import requests
+import urllib3
+import csv
+import datetime
+import re
+import warnings
 
-2. **`location`**: The Azure region where the resources will be deployed.
-   ```hcl
-   location = var.location
-   ```
+warnings.filterwarnings("ignore")
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-3. **`vnetName`**: The name of the virtual network where the SQL Server will be deployed.
-   ```hcl
-   vnetName = module.subnets.vnet_name
-   ```
+# Function to get Dependabot alerts for the enterprise
+def getDependabotAlertsEnterprise(enterprise, token, org, page=1):
+    repo_urls = []
+    headers = {'Authorization': f"Bearer {token}", "Accept": "application/vnd.github+json"}
+    url = f"https://api.github.com/enterprises/{enterprise}/dependabot/alerts?per_page=100&page={page}&org={org}&state=open"
+    res = requests.get(url, headers=headers, verify=False)
 
-4. **`vnetResourceGroupName`**: The resource group containing the virtual network.
-   ```hcl
-   vnetResourceGroupName = module.subnets.system_rg_name
-   ```
+    # Debugging output
+    print(f"Request URL: {res.url}")
+    print(f"Response Status Code: {res.status_code}")
 
-5. **`pepSubnet`**: The name of the subnet used for private endpoints.
-   ```hcl
-   pepSubnet = module.subnets.subnets_info["private"].subnet_name
-   ```
+    if res.status_code != 200:
+        raise Exception(f"Error: {res.status_code}, {res.text}")
 
-6. **`pepSubnetId`**: The ID of the private endpoint subnet.
-   ```hcl
-   pepSubnetId = module.subnets.subnets_info["private"].subnet_id
-   ```
+    if len(res.json()) == 100:
+        repo_urls += res.json()
+        repo_urls += getDependabotAlertsEnterprise(enterprise, token, org, page + 1)
+    else:
+        repo_urls += res.json()
 
-7. **`resourceGroupName`**: The resource group name for the Azure SQL Server.
-   ```hcl
-   resourceGroupName = module.landing_zone.mod_out_app_resource_group_names
-   ```
+    return repo_urls
 
-8. **`keyvaultName`**: The name of the Key Vault used for SQL Server secrets.
-   ```hcl
-   keyvaultName = module.akv.keyvault_name
-   ```
+# Main function to generate the CSV file for multiple organizations in the enterprise
+def main():
+    headers = ["Organization", "Repository_Name", "Alert ID", "ComponentName", "Package Name", "Ecosystem", "Manifest_Path", "Vulnerability Rating", "ShortDescription", "Description", "Vulnerability ID", "First_Patched_Version", "Unique ID", "CVSS Rating", "CVSS Version", "Vulnerabilities List", "Identifiers", "Vulnerable Version Range", "Github URL", "Date Discovered", "Base_Repo_Name"]
+    
+    # Retrieve the access token and enterprise name from environment variables or hardcode them
+    GHToken = os.getenv("ACCESS_TOKEN")
+    enterprise_name = "your_enterprise"  # Replace with your enterprise name
+    
+    # List of organizations to collect Dependabot alerts from
+    org_list = ["org1", "org2"]  # Replace with your organization names
 
-9. **`serverBaseName`**: The base name for the SQL Server.
-   ```hcl
-   serverBaseName = "${var.location}-${var.env_name}-${var.lz_name}"
-   ```
+    # Set the path and name for the CSV file
+    current_date = datetime.datetime.now().strftime("%m-%d-%Y")
+    csv_file_path = f"//Vulnerabilities/current/Vulnerabilities_{current_date}.csv"
 
-10. **`serverName`**: The full name of the SQL Server resource.
-    ```hcl
-    serverName = "${var.serverBaseName}-sqlserver"
-    ```
+    with open(csv_file_path, mode='w', newline='', encoding='utf-8') as file:
+        writer = csv.writer(file)
+        writer.writerow(headers)
 
-11. **`lzSPNName`**: The name of the LZ Service Principal.
-    ```hcl
-    lzSPNName = var.lzSPNName
-    ```
+        for org in org_list:
+            dependaBotAlerts = getDependabotAlertsEnterprise(enterprise_name, GHToken, org)
 
-12. **`lzSPNObjectId`**: The object ID of the LZ Service Principal.
-    ```hcl
-    lzSPNObjectId = var.lzSPNObjectId
-    ```
+            # Write the Dependabot alerts for each organization to the CSV file
+            for alert in dependaBotAlerts:
+                if "dependency" in alert:
+                    Vuln_ID = alert['security_advisory']['cve_id'] if alert['security_advisory']['cve_id'] else alert['security_advisory']['ghsa_id']
+                    CVSS_Version = re.search(r'CVSS:(.*?)V(\d)', str(alert['security_advisory']['cvss']['vector_string']))
+                    if CVSS_Version:
+                        CVSS_Version = CVSS_Version.group(1)
+                    writer.writerow([
+                        org,
+                        alert['repository']['full_name'],
+                        f"GHASID-{alert['number']}",
+                        f"{alert['dependency']['package']['ecosystem']}:{alert['dependency']['package']['name']}",
+                        alert['dependency']['package']['name'],
+                        alert['dependency']['package']['ecosystem'],
+                        alert['dependency']['manifest_path'],
+                        alert['security_advisory']['severity'],
+                        alert['security_advisory']['summary'].replace('\n', '').replace('\r', ''),
+                        alert['security_advisory']['description'].replace('\n', ' ').replace('\r', ' '),
+                        Vuln_ID,
+                        alert['security_vulnerability']['first_patched_version']['identifier'] if alert['security_vulnerability']['first_patched_version'] else "Not patched",
+                        f"GHASID-{alert['number']}_{alert['dependency']['package']['name']}_{alert['repository']['full_name'].replace('/', '_')}",
+                        alert['security_advisory']['cvss']['score'],
+                        CVSS_Version,
+                        str(alert['security_advisory']['vulnerabilities']),
+                        str(alert['security_advisory']['identifiers']),
+                        alert['security_vulnerability']['vulnerable_version_range'],
+                        alert['repository']['html_url'],
+                        alert['created_at'],
+                        alert['repository']['full_name'].split("/", 1)[0]
+                    ])
+                else:
+                    print(f"No valid data for org: {org}, repo: {alert.get('repository', {}).get('full_name')}")
 
-13. **`lzSPNClientId`**: The client ID of the LZ Service Principal.
-    ```hcl
-    lzSPNClientId = var.lzSPNClientId
-    ```
-
-14. **`aadadminUserName`**: The AAD group to be set as the AD administrator for SQL Server.
-    ```hcl
-    aadadminUserName = var.aadadminUserName
-    ```
-
-15. **`aadadminObjectId`**: The object ID of the AAD administrator for SQL Server.
-    ```hcl
-    aadadminObjectId = var.aadadminObjectId
-    ```
-
-16. **`sqlDatabases`**: Map of SQL Databases to create on the SQL Server.
-    ```hcl
-    sqlDatabases = var.sqlDatabases
-    ```
-
-17. **`deployDatabaseInExistingServer`**: Boolean flag indicating if the database should be deployed in an existing SQL Server.
-    ```hcl
-    deployDatabaseInExistingServer = var.deployDatabaseInExistingServer
-    ```
-
-18. **`sqlDatabaseActionGroup`**: Map of action group properties to send alerts.
-    ```hcl
-    sqlDatabaseActionGroup = var.sqlDatabaseActionGroup
-    ```
-
-19. **`sqlDatabaseMetricAlerts`**: Map of SQL Database metrics alert properties.
-    ```hcl
-    sqlDatabaseMetricAlerts = var.sqlDatabaseMetricAlerts
-    ```
-
-20. **`sqlFailoverGroup`**: Map of SQL Server failover properties.
-    ```hcl
-    sqlFailoverGroup = var.sqlFailoverGroup
-    ```
-
-21. **`logAnalyticsWorkspace`**: Properties for the LZ-scoped log analytics workspace.
-    ```hcl
-    logAnalyticsWorkspace = var.logAnalyticsWorkspace
-    ```
-
-22. **`diagnostics`**: Map of diagnostics settings for each database.
-    ```hcl
-    diagnostics = var.diagnostics
-    ```
-
-23. **`connectionPolicy`**: The connection policy to SQL Server.
-    ```hcl
-    connectionPolicy = var.connectionPolicy
-    ```
-
-24. **`enableAdOnlyAuth`**: Boolean flag indicating if AD-only authentication to SQL Server is enabled.
-    ```hcl
-    enableAdOnlyAuth = var.enableAdOnlyAuth
-    ```
-
-25. **`failoverRole`**: The role of the SQL Server if part of a failover group.
-    ```hcl
-    failoverRole = var.failoverRole
-    ```
-
-26. **`primaryResourceGroupName`**: The resource group of the primary Server landing zone.
-    ```hcl
-    primaryResourceGroupName = var.primaryResourceGroupName
-    ```
-
-27. **`primaryServerName`**: The full name of the primary SQL Server (if configuring failover).
-    ```hcl
-    primaryServerName = var.primaryServerName
-    ```
-
-28. **`primaryKeyvaultName`**: The name of the primary Azure Key Vault containing the TDE key.
-    ```hcl
-    primaryKeyvaultName = var.primaryKeyvaultName
-    ```
-
-29. **`primarySqlServerTdeKey`**: The primary SQL Server TDE key to be used by server encryption.
-    ```hcl
-    primarySqlServerTdeKey = var.primarySqlServerTdeKey
-    ```
-
-30. **`secondaryResourceGroupName`**: The resource group of the secondary Server landing zone.
-    ```hcl
-    secondaryResourceGroupName = var.secondaryResourceGroupName
-    ```
-
-31. **`secondaryServerName`**: The full name of the secondary SQL Server (if configuring failover).
-    ```hcl
-    secondaryServerName = var.secondaryServerName
-    ```
-
-32. **`enableDiagnostics`**: Boolean flag indicating if DB-level diagnostics logging is enabled.
-    ```hcl
-    enableDiagnostics = var.enableDiagnostics
-    ```
-
-33. **`triggerDBFurnishings`**: Trigger value to update DB furnishings.
-    ```hcl
-    triggerDBFurnishings = var.triggerDBFurnishings
-    ```
-
-34. **`secondaryDatabaseIdsForDiagnostics`**: Map of database IDs for which diagnostics logging is enabled.
-    ```hcl
-    secondaryDatabaseIdsForDiagnostics = var.secondaryDatabaseIdsForDiagnostics
-    ```
-
-You can integrate these parameters into your main configuration file as follows:
-
-```hcl
-module "sql" {
-  source = "github.com/cloud-era/terraform-azure-component-sql?ref=init"
-
-  eonId                         = var.eonId
-  location                      = var.location
-  vnetName                      = module.subnets.vnet_name
-  vnetResourceGroupName         = module.subnets.system_rg_name
-  pepSubnet                     = module.subnets.subnets_info["private"].subnet_name
-  pepSubnetId                   = module.subnets.subnets_info["private"].subnet_id
-  resourceGroupName             = module.landing_zone.mod_out_app_resource_group_names
-  keyvaultName                  = module.akv.keyvault_name
-  serverBaseName                = "${var.location}-${var.env_name}-${var.lz_name}"
-  serverName                    = "${var.serverBaseName}-sqlserver"
-  lzSPNName                     = var.lzSPNName
-  lzSPNObjectId                 = var.lzSPNObjectId
-  lzSPNClientId                 = var.lzSPNClientId
-  aadadminUserName              = var.aadadminUserName
-  aadadminObjectId              = var.aadadminObjectId
-  sqlDatabases                  = var.sqlDatabases
-  deployDatabaseInExistingServer = var.deployDatabaseInExistingServer
-  sqlDatabaseActionGroup        = var.sqlDatabaseActionGroup
-  sqlDatabaseMetricAlerts       = var.sqlDatabaseMetricAlerts
-  sqlFailoverGroup              = var.sqlFailoverGroup
-  logAnalyticsWorkspace        = var.logAnalyticsWorkspace
-  diagnostics                   = var.diagnostics
-  connectionPolicy              = var.connectionPolicy
-  enableAdOnlyAuth              = var.enableAdOnlyAuth
-  failoverRole                  = var.failoverRole
-  primaryResourceGroupName      = var.primaryResourceGroupName
-  primaryServerName             = var.primaryServerName
-  primaryKeyvaultName           = var.primaryKeyvaultName
-  primarySqlServerTdeKey        = var.primarySqlServerTdeKey
-  secondaryResourceGroupName    = var.secondaryResourceGroupName
-  secondaryServerName           = var.secondaryServerName
-  enableDiagnostics             = var.enableDiagnostics
-  triggerDBFurnishings          = var.triggerDBFurnishings
-  secondaryDatabaseIdsForDiagnostics = var.secondaryDatabaseIdsForDiagnostics
-}
+if __name__ == "__main__":
+    main()
 ```
 
-Make sure to adjust the parameters according to your specific requirements and any additional values that might be required by your Azure SQL module.
+### Key Changes:
+1. **Enterprise-Level Alerts**: 
+   - The function `getDependabotAlertsEnterprise` retrieves alerts for each organization under the enterprise. It takes the `enterprise` name, `token`, and `org` as parameters.
+   - The URL structure is adjusted for the enterprise-level API: `https://api.github.com/enterprises/{enterprise}/dependabot/alerts?org={org}`.
+   
+2. **Organization List**:
+   - You can specify multiple organizations under `org_list = ["org1", "org2"]`. This way, the script captures Dependabot alerts for all specified organizations.
+   
+3. **Output CSV**: 
+   - Each alert is written to the CSV with an additional column, `Organization`, to identify which organization the alert came from.
+
+This will ensure that you capture and export Dependabot alerts for all organizations under your enterprise.
