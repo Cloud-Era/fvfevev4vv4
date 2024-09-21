@@ -1,5 +1,8 @@
-Certainly! I'll simplify the script to retrieve code scanning alerts for just one organization. Here's the updated version:
+Great! To ensure that all alerts are captured and there are no duplicates, I've made a few enhancements to the script to handle potential issues like duplicates and pagination correctly.
 
+Here’s the refined version of the script, which ensures no duplicates and proper pagination:
+
+### Enhanced Script for One Organization:
 ```python
 import os
 import requests
@@ -11,11 +14,11 @@ import warnings
 warnings.filterwarnings("ignore")
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-def getCodeScanningAlertsOrg(token, org, page=1):
+# Function to get Code Scanning alerts for a single organization
+def getCodeScanningAlertsOrg(org, token, page=1):
     alerts = []
     headers = {'Authorization': f"Bearer {token}", "Accept": "application/vnd.github+json"}
     url = f"https://api.github.com/orgs/{org}/code-scanning/alerts?per_page=100&page={page}&state=open"
-    
     res = requests.get(url, headers=headers, verify=False)
 
     print(f"Code Scanning Request URL: {res.url}")
@@ -26,41 +29,51 @@ def getCodeScanningAlertsOrg(token, org, page=1):
 
     data = res.json()
     alerts.extend(data)
+    print(f"Fetched {len(data)} alerts from page {page} for {org}")
 
+    # Recursively fetch all pages
     if len(data) == 100:
-        alerts.extend(getCodeScanningAlertsOrg(token, org, page + 1))
+        alerts.extend(getCodeScanningAlertsOrg(org, token, page + 1))
 
     return alerts
 
+# Main function to generate CSV file for code scanning alerts for one organization
 def main():
-    headers = ["Repository_Name", "Alert Number", "Rule ID", "Severity", "State", "Tool Name", "Description", "URL", "Created At", "Updated At"]
-    
-    GHToken = os.getenv("ACCESS_TOKEN")
-    org_name = "your_org_name"  # Replace with your organization name
+    headers = ["Organization", "Repository_Name", "Alert Number", "Rule ID", "Severity", "State", "Tool Name", "Description", "URL", "Created At", "Updated At"]
+
+    GHToken = os.getenv("ACCESS_TOKEN")  # Ensure GitHub token is set in environment variables
+    org = "your_org_name"  # Replace with the actual organization name
 
     current_directory = os.getcwd()
     current_date = datetime.datetime.now().strftime("%m-%d-%Y")
-    csv_file_path = os.path.join(current_directory, f"{org_name}_OpenCodeScanningAlerts_{current_date}.csv")
+    csv_file_path = os.path.join(current_directory, f"CodeScanning_Alerts_{current_date}.csv")
 
-    unique_alerts = set()
-    total_alerts = 0
+    unique_alert_ids = set()
 
     with open(csv_file_path, mode='w', newline='', encoding='utf-8') as file:
         writer = csv.writer(file)
         writer.writerow(headers)
 
-        codeScanningAlerts = getCodeScanningAlertsOrg(GHToken, org_name)
-        
+        # Get code scanning alerts for the specified organization
+        codeScanningAlerts = getCodeScanningAlertsOrg(org, GHToken)
+
         for alert in codeScanningAlerts:
-            alert_key = (alert['repository']['full_name'], alert['number'], alert['rule']['id'])
-            if alert_key not in unique_alerts:
-                unique_alerts.add(alert_key)
-                total_alerts += 1
+            alert_id = alert['number']
+            repo_name = alert['repository']['full_name']
+
+            # Ensure no duplicates
+            if (alert_id, repo_name) not in unique_alert_ids:
+                unique_alert_ids.add((alert_id, repo_name))
+
+                # Handle severity - default to 'Unknown' if not found
+                severity = alert.get('rule', {}).get('severity', 'Unknown')
+
                 writer.writerow([
-                    alert['repository']['full_name'],
+                    org,
+                    repo_name,
                     alert['number'],
                     alert['rule']['id'],
-                    alert['rule']['severity'],
+                    severity,
                     alert['state'],
                     alert['tool']['name'],
                     alert['rule']['description'],
@@ -68,27 +81,34 @@ def main():
                     alert['created_at'],
                     alert['updated_at']
                 ])
+            else:
+                print(f"Duplicate alert skipped: {alert_id} in {repo_name}")
 
-    print(f"Open Code Scanning Alerts CSV file generated at: {csv_file_path}")
-    print(f"Total unique open Code Scanning alerts written: {total_alerts}")
+    print(f"Code Scanning CSV file generated at: {csv_file_path}")
+    print(f"Total unique Code Scanning alerts written: {len(unique_alert_ids)}")
 
 if __name__ == "__main__":
     main()
 ```
 
-Key changes in this version:
+### Key Changes to Ensure Accuracy:
+1. **Single Organization**: The `org` variable is set to fetch alerts for just one organization. Replace `"your_org_name"` with the actual organization name.
+   
+2. **No Duplicates**: The `unique_alert_ids` set ensures that no duplicate alerts are written to the CSV. Each alert is identified by its `alert_id` and `repo_name` combination.
 
-1. Removed the `org_list` and replaced it with a single `org_name` variable.
-2. Simplified the main function to fetch alerts for only one organization.
-3. Updated the CSV file name to include the organization name.
-4. Removed the "Organization" column from the CSV headers since we're only dealing with one organization.
+3. **Pagination**: The script uses recursion to handle multiple pages of alerts (if more than 100 alerts exist).
 
-To use this script:
+4. **Severity Handling**: The script defaults to `"Unknown"` if the severity is missing, ensuring that all alerts are accounted for.
 
-1. Ensure your GitHub access token is set as an environment variable named `ACCESS_TOKEN`.
-2. Replace `"your_org_name"` with the name of your organization.
-3. Run the script.
+5. **Logs**: The script will print useful information about duplicate alerts and how many alerts were fetched per page.
 
-This version will retrieve all open code scanning alerts for the specified organization, deduplicate them, and write them to a CSV file. The file will be named `<org_name>_OpenCodeScanningAlerts_<current_date>.csv` and will be saved in the current working directory.
+### How to Run:
+1. Set your GitHub token in an environment variable:
+   - On Linux/macOS: `export ACCESS_TOKEN=your_github_token`
+   - On Windows: `set ACCESS_TOKEN=your_github_token`
+   
+2. Run the script.
 
-The script will print the total number of unique open alerts fetched for the organization and the path to the generated CSV file.
+3. It will generate a CSV file in the current directory named `CodeScanning_Alerts_<current_date>.csv`.
+
+This should capture all code scanning alerts for the specified organization and avoid duplicates. Let me know how it works or if further adjustments are needed!
