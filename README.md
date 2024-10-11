@@ -1,42 +1,27 @@
-To enable diagnostic settings for an API Management (APIM) instance and send logs to both a local dedicated Log Analytics Workspace (LAW) and a centralized LAW, you can modify the Terraform code to create two diagnostic settings, one for each LAW. Here's how you can implement it:
+To configure your API Management (APIM) diagnostic settings to point to **two different Log Analytics Workspaces** (one local and one central), you will need to set up **two separate `azurerm_monitor_diagnostic_setting` resources**: one for the local diagnostics and one for the central diagnostics. Here's how you can modify your setup to accommodate both:
 
-### 1. **Modify the `azurerm_monitor_diagnostic_setting` for APIM**
+### Current Configuration:
+Your current setup points diagnostics to either the local Log Analytics workspace (`module.law[0].laws_id`) or the central workspace (`var.central_law`). We will split this into two distinct diagnostic settings, one for each workspace.
 
-You can create two separate `azurerm_monitor_diagnostic_setting` resources:
-
-- One for the local dedicated LAW (if enabled).
-- One for the centralized LAW.
-
-Each diagnostic setting resource will send logs to the respective LAW.
-
-#### Example:
+### Updated Configuration:
 
 ```hcl
+# Diagnostics settings for API Management (APIM) logging to local LAW
 resource "azurerm_monitor_diagnostic_setting" "apim_diagnostic_local" {
-  count = var.deploy_dedicated_law ? 1 : 0
+  name                       = format("%s-diagnostic-local", local.basename)
+  target_resource_id         = azurerm_api_management.apim.id
+  log_analytics_workspace_id = module.law[0].laws_id  # Local LAW
+  log_analytics_destination_type = var.log_analytics_destination_type
 
-  name                    = format("%s-diagnostic-local", local.basename)
-  target_resource_id       = azurerm_api_management.apim.id
-  log_analytics_workspace_id = module.law[0].laws_id
-
-  logs {
+  # Log category group: Enable all logs
+  enabled_log {
     category_group = "allLogs"
-    enabled        = true
-
-    retention_policy {
-      enabled = true
-      days    = var.laws_retention_in_days
-    }
   }
 
-  metrics {
+  # Metric category: Enable all metrics
+  metric {
     category = "AllMetrics"
     enabled  = true
-
-    retention_policy {
-      enabled = true
-      days    = var.laws_retention_in_days
-    }
   }
 
   lifecycle {
@@ -44,31 +29,22 @@ resource "azurerm_monitor_diagnostic_setting" "apim_diagnostic_local" {
   }
 }
 
+# Diagnostics settings for API Management (APIM) logging to central LAW
 resource "azurerm_monitor_diagnostic_setting" "apim_diagnostic_central" {
-  count = var.central_law_workspace_id != null ? 1 : 0
+  name                       = format("%s-diagnostic-central", local.basename)
+  target_resource_id         = azurerm_api_management.apim.id
+  log_analytics_workspace_id = var.central_law  # Central LAW
+  log_analytics_destination_type = var.log_analytics_destination_type
 
-  name                    = format("%s-diagnostic-central", local.basename)
-  target_resource_id       = azurerm_api_management.apim.id
-  log_analytics_workspace_id = var.central_law_workspace_id
-
-  logs {
+  # Log category group: Enable all logs
+  enabled_log {
     category_group = "allLogs"
-    enabled        = true
-
-    retention_policy {
-      enabled = true
-      days    = var.laws_retention_in_days
-    }
   }
 
-  metrics {
+  # Metric category: Enable all metrics
+  metric {
     category = "AllMetrics"
     enabled  = true
-
-    retention_policy {
-      enabled = true
-      days    = var.laws_retention_in_days
-    }
   }
 
   lifecycle {
@@ -77,50 +53,38 @@ resource "azurerm_monitor_diagnostic_setting" "apim_diagnostic_central" {
 }
 ```
 
-### 2. **Variables in `variables.tf`**
+### Breakdown of the Changes:
+1. **Local Diagnostic Setting (`apim_diagnostic_local`)**:
+   - This points to the **local Log Analytics workspace** (`module.law[0].laws_id`).
+   - It enables both logs (`allLogs`) and metrics (`AllMetrics`).
 
-Make sure you have the necessary variables to control the deployment of the local LAW and to reference the centralized LAW.
+2. **Central Diagnostic Setting (`apim_diagnostic_central`)**:
+   - This points to the **central Log Analytics workspace** (`var.central_law`).
+   - It enables both logs (`allLogs`) and metrics (`AllMetrics`).
 
-#### `variables.tf`:
+### Variable Declaration:
+Make sure that the `var.central_law` and `module.law[0].laws_id` are set correctly in your Terraform configurations.
 
 ```hcl
-variable "deploy_dedicated_law" {
-  type        = bool
-  description = "Deploy a dedicated LAW instance for APIM"
-  default     = true
-}
-
-variable "central_law_workspace_id" {
+variable "central_law" {
+  description = "ID of the Centralized Log Analytics Workspace"
   type        = string
-  description = "ID of the Centralized LAW when not using a dedicated APIM LAW"
-  default     = null
 }
 
 variable "log_analytics_destination_type" {
-  description = "(Optional) Possible values are AzureDiagnostics and Dedicated."
+  description = "Destination type for log analytics"
   type        = string
   default     = "Dedicated"
 }
-
-variable "laws_retention_in_days" {
-  description = "The log analytics workspace retention days, default to 400"
-  type        = number
-  default     = 400
-}
 ```
 
-### 3. **Explanation**
+### Explanation:
+- **Two diagnostic settings** are created: one for each Log Analytics workspace (local and central).
+- The `log_analytics_workspace_id` is set to either the local or central workspace depending on the resource (`apim_diagnostic_local` or `apim_diagnostic_central`).
+- **Both diagnostic settings** are independent of each other and enable logging and metrics for their respective workspaces.
 
-- **`apim_diagnostic_local`**: This resource creates the diagnostic setting for the local dedicated Log Analytics Workspace (LAW), but it will only be created if `var.deploy_dedicated_law` is `true`.
+### Important Notes:
+- Ensure that both `module.law[0].laws_id` and `var.central_law` have valid values.
+- Adjust `retention_policy` if needed to comply with retention rules.
   
-- **`apim_diagnostic_central`**: This resource creates the diagnostic setting for the centralized Log Analytics Workspace. It will only be created if `var.central_law_workspace_id` is not `null`.
-
-- **`log_analytics_workspace_id`**: The workspace IDs for the local LAW and central LAW are passed dynamically based on whether the user wants to deploy a dedicated LAW (`module.law[0].laws_id`) or use a centralized LAW (`var.central_law_workspace_id`).
-
-- **`logs` and `metrics`**: These blocks define which logs and metrics are sent to the LAW. You can customize the log categories and metrics based on your requirements.
-
-### 4. **Lifecycle Ignore Changes**
-The `lifecycle { ignore_changes = [log, metric] }` block is used to ensure that changes in logs or metrics won't trigger recreation of the resource.
-
-### Conclusion
-By using two `azurerm_monitor_diagnostic_setting` resources—one for the local dedicated LAW and one for the central LAW—you can ensure that logs and metrics are sent to both workspaces. The conditionally created resources allow flexibility, depending on whether a dedicated or centralized LAW is used.
+Now your APIM diagnostics will be sent to both the local and central Log Analytics workspaces!
