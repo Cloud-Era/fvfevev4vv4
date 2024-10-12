@@ -1,90 +1,113 @@
-To configure your API Management (APIM) diagnostic settings to point to **two different Log Analytics Workspaces** (one local and one central), you will need to set up **two separate `azurerm_monitor_diagnostic_setting` resources**: one for the local diagnostics and one for the central diagnostics. Here's how you can modify your setup to accommodate both:
+To add **central diagnostic settings** to your **Azure Virtual Network** within the existing `terraform-azure-virtual-network` module, you will need to include the **diagnostic setting resource** for the virtual network and configure it to point to the **central Log Analytics Workspace**.
 
-### Current Configuration:
-Your current setup points diagnostics to either the local Log Analytics workspace (`module.law[0].laws_id`) or the central workspace (`var.central_law`). We will split this into two distinct diagnostic settings, one for each workspace.
+Here’s how you can achieve this:
 
-### Updated Configuration:
+### Step 1: Update the `terraform-azure-virtual-network` Module
+You can add the `azurerm_monitor_diagnostic_setting` resource to enable diagnostic logging for your virtual network and point it to the **central Log Analytics Workspace**.
+
+In your `terraform-azure-virtual-network/main.tf`, modify it as follows:
 
 ```hcl
-# Diagnostics settings for API Management (APIM) logging to local LAW
-resource "azurerm_monitor_diagnostic_setting" "apim_diagnostic_local" {
-  name                       = format("%s-diagnostic-local", local.basename)
-  target_resource_id         = azurerm_api_management.apim.id
-  log_analytics_workspace_id = module.law[0].laws_id  # Local LAW
-  log_analytics_destination_type = var.log_analytics_destination_type
-
-  # Log category group: Enable all logs
-  enabled_log {
-    category_group = "allLogs"
-  }
-
-  # Metric category: Enable all metrics
-  metric {
-    category = "AllMetrics"
-    enabled  = true
-  }
-
-  lifecycle {
-    ignore_changes = [log, metric]
-  }
+resource "azurerm_virtual_network" "Vnet" {
+  name                = var.res_vnet_name
+  location            = var.res_location
+  resource_group_name = var.res_vnet_rg_name
+  address_space       = var.res_vnet_address_prefix
+  tags                = var.res_tags
 }
 
-# Diagnostics settings for API Management (APIM) logging to central LAW
-resource "azurerm_monitor_diagnostic_setting" "apim_diagnostic_central" {
-  name                       = format("%s-diagnostic-central", local.basename)
-  target_resource_id         = azurerm_api_management.apim.id
-  log_analytics_workspace_id = var.central_law  # Central LAW
-  log_analytics_destination_type = var.log_analytics_destination_type
+# Add Central Diagnostic Setting for Virtual Network
+resource "azurerm_monitor_diagnostic_setting" "vnet_diagnostic_central" {
+  name                       = "${azurerm_virtual_network.Vnet.name}-diagnostic-central"
+  target_resource_id         = azurerm_virtual_network.Vnet.id
+  log_analytics_workspace_id = var.central_law_workspace_id  # Variable for Central LAW Workspace
 
-  # Log category group: Enable all logs
-  enabled_log {
-    category_group = "allLogs"
+  logs {
+    category = "NetworkSecurityGroupEvent"
+    enabled  = true
+
+    retention_policy {
+      enabled = true
+      days    = 30  # Set retention policy as per your requirements
+    }
   }
 
-  # Metric category: Enable all metrics
-  metric {
+  metrics {
     category = "AllMetrics"
     enabled  = true
-  }
 
-  lifecycle {
-    ignore_changes = [log, metric]
+    retention_policy {
+      enabled = true
+      days    = 30
+    }
   }
 }
 ```
 
-### Breakdown of the Changes:
-1. **Local Diagnostic Setting (`apim_diagnostic_local`)**:
-   - This points to the **local Log Analytics workspace** (`module.law[0].laws_id`).
-   - It enables both logs (`allLogs`) and metrics (`AllMetrics`).
-
-2. **Central Diagnostic Setting (`apim_diagnostic_central`)**:
-   - This points to the **central Log Analytics workspace** (`var.central_law`).
-   - It enables both logs (`allLogs`) and metrics (`AllMetrics`).
-
-### Variable Declaration:
-Make sure that the `var.central_law` and `module.law[0].laws_id` are set correctly in your Terraform configurations.
+### Step 2: Declare the Central LAW Variable
+In the module's `variables.tf` file, add a new input variable for the **central Log Analytics Workspace ID**:
 
 ```hcl
-variable "central_law" {
-  description = "ID of the Centralized Log Analytics Workspace"
+variable "central_law_workspace_id" {
+  description = "The ID of the Centralized Log Analytics Workspace for diagnostics"
   type        = string
-}
-
-variable "log_analytics_destination_type" {
-  description = "Destination type for log analytics"
-  type        = string
-  default     = "Dedicated"
 }
 ```
 
-### Explanation:
-- **Two diagnostic settings** are created: one for each Log Analytics workspace (local and central).
-- The `log_analytics_workspace_id` is set to either the local or central workspace depending on the resource (`apim_diagnostic_local` or `apim_diagnostic_central`).
-- **Both diagnostic settings** are independent of each other and enable logging and metrics for their respective workspaces.
+### Step 3: Update the Landing Zone Configuration
+Now that you’ve updated the `terraform-azure-virtual-network` module, you need to pass the `central_law_workspace_id` from the **landing zone module** (`terrafora-azure-component-landing-zone`).
 
-### Important Notes:
-- Ensure that both `module.law[0].laws_id` and `var.central_law` have valid values.
-- Adjust `retention_policy` if needed to comply with retention rules.
+In your **landing zone module**, update the **Virtual Network** module call as follows:
+
+```hcl
+module "virtual_network" {
+  source                 = "github.com/cloud-era/terraform-azure-virtual-network?ref=init"
+  res_vnet_name          = "routable-${var.location}-vnet-01"
+  res_location           = var.location
+  res_vnet_rg_name       = "eons(${var.eonid})-${var.location}-${var.lz_name}-system-rg"
+  res_vnet_address_prefix = var.vnet_address_prefix
+  res_dns_servers        = null
+  res_tags               = merge(var.tags, var.automation_tags)
   
-Now your APIM diagnostics will be sent to both the local and central Log Analytics workspaces!
+  # Pass the central LAW workspace ID to the virtual network module
+  central_law_workspace_id = var.central_law_workspace_id
+}
+```
+
+### Step 4: Ensure Central LAW Variable is Defined in the Landing Zone
+In the **landing zone module’s `variables.tf`** file, make sure that `central_law_workspace_id` is declared as a variable:
+
+```hcl
+variable "central_law_workspace_id" {
+  description = "The ID of the Centralized Log Analytics Workspace for diagnostics"
+  type        = string
+}
+```
+
+### Step 5: Provide the `central_law_workspace_id` Input
+Finally, when calling the **landing zone module** in your main configuration, pass the `central_law_workspace_id` like this:
+
+```hcl
+module "landing_zone" {
+  source                 = "github.com/cloud-era/terrafora-azure-component-landing-zone?ref=init"
+
+  # Other parameters
+  eonid                  = var.eonid
+  location               = var.location
+  lz_name                = var.lz_name
+  short_name             = var.short_name
+  short_env              = var.short_env
+  env                    = var.env_name
+  vnet_address_prefix     = var.vnet_address_prefix
+  tags                   = var.tags
+
+  # Pass Central Log Analytics Workspace ID
+  central_law_workspace_id = var.central_law_workspace_id
+}
+```
+
+### Result:
+- **Diagnostic logs** from the Virtual Network will now be sent to the **central Log Analytics Workspace**.
+- You can configure the logs and metrics categories based on your needs, such as `NetworkSecurityGroupEvent`, `AllMetrics`, or others.
+
+This approach ensures that your virtual network has both functionality and centralized diagnostics.
