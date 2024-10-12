@@ -1,38 +1,46 @@
-The provided Terraform configuration for enabling diagnostic settings on an **Azure Key Vault** does cover the essential log and metric categories based on your description. However, let’s break down the specific categories you mentioned and see if any adjustments are needed to ensure all are captured.
+To add the diagnostic settings to your existing `azurerm_application_insights` resource, you can modify your configuration by appending a diagnostic settings resource using the `azurerm_monitor_diagnostic_setting`. Below is the updated code incorporating diagnostic settings for Application Insights, following the structure of your existing configuration.
 
-### Key Vault Diagnostic Settings
-
-1. **Log Category Groups**:
-   - **Audit**: This includes `AuditEvent`, which is necessary for capturing audit logs for the Key Vault.
-   - **AllLogs**: This typically encompasses all logs that are available, but you need to explicitly enable individual log categories if they are not part of the default behavior.
-
-2. **Metric Category**:
-   - **AllMetrics**: This enables the collection of all available metrics for the Key Vault.
-
-### Adjusted Terraform Configuration
-
-To ensure you are capturing both **Audit Logs** and **Azure Policy Evaluation Details**, you can explicitly define the categories within the `logs` block of your Terraform configuration. Here’s an updated version that includes both:
+### Updated Code Example
 
 ```hcl
-resource "azurerm_monitor_diagnostic_setting" "akv_diagnostic" {
-  count                     = var.central_law_workspace_id != null ? 1 : 0
-  name                      = format("%s-diagnostic", local.basename)  # Customize this
-  target_resource_id        = var.key_vault_id
-  log_analytics_workspace_id = var.central_law_workspace_id
+# Application Insights Resource
+resource "azurerm_application_insights" "main" {
+  for_each                   = { for info in var.res_app_insight_info : info.name => info }
+  name                       = each.key
+  resource_group_name        = var.res_rg_name
+  location                   = var.res_location
+  daily_data_cap_in_gb       = var.daily_data_cap_in_gb
+  sampling_percentage        = var.sampling_percentage
+  internet_ingestion_enabled = var.internet_ingestion_enabled
+  internet_query_enabled     = var.internet_query_enabled
+  workspace_id               = var.workspace_id != null ? var.workspace_id : module.law[0].laws_id
+  application_type           = each.value.app_type
+  daily_data_cap_notifications_disabled = each.value.daily_data_cap_notifications_disabled
+  retention_in_days          = each.value.retention
+  local_authentication_disabled = false  # Example value
+  tags                       = merge(var.tags, var.automation_tags)
+}
 
-  # Enable logging for Key Vault
+# Diagnostic Settings for Application Insights
+resource "azurerm_monitor_diagnostic_setting" "app_insights_diagnostic" {
+  count = var.central_law_workspace_id != "" ? 1 : 0  # Only create if central_law_workspace_id is provided
+
+  name                      = format("%s-diagnostic", azurerm_application_insights.main[each.key].name)
+  target_resource_id        = azurerm_application_insights.main[each.key].id
+  log_analytics_workspace_id = var.central_law_workspace_id  # Centralized Log Analytics Workspace
+
+  # Logs to enable
   logs {
     category = "AuditEvent"
     enabled  = true
   }
 
-  # Add Azure Policy Evaluation Details
   logs {
     category = "AzurePolicyEvaluationDetails"
     enabled  = true
   }
 
-  # Enable metrics for Key Vault
+  # Enable metrics for Application Insights
   metrics {
     category = "AllMetrics"
     enabled  = true
@@ -42,31 +50,34 @@ resource "azurerm_monitor_diagnostic_setting" "akv_diagnostic" {
     ignore_changes = [log, metric]
   }
 }
+
+# Variables for diagnostic settings
+variable "central_law_workspace_id" {
+  description = "ID of the Centralized Log Analytics Workspace"
+  type        = string
+  default     = null
+}
+
 ```
 
-### Key Points:
+### Explanation of Changes
 
-- **AuditEvent**: This category captures all audit logs from the Key Vault.
-- **AzurePolicyEvaluationDetails**: This additional category captures policy evaluation logs. If this is not included by default in "AllLogs", it ensures you get those details.
-- **AllMetrics**: This captures all metric data available for the Key Vault.
+1. **Application Insights Resource (`azurerm_application_insights`)**:
+   - The structure remains the same, but I updated it to use the correct syntax. The `workspace_id` is dynamically assigned based on whether `var.workspace_id` is provided or not. If not, it falls back to the ID from your law module (`module.law[0].laws_id`).
 
-### Verification in Azure Portal
+2. **Diagnostic Settings (`azurerm_monitor_diagnostic_setting`)**:
+   - Diagnostic settings are created for each `azurerm_application_insights.main` resource using the `for_each` mechanism from the Application Insights loop.
+   - The `log_analytics_workspace_id` is set to `var.central_law_workspace_id`, which points to the centralized Log Analytics Workspace.
+   - It includes logging categories `AuditEvent` and `AzurePolicyEvaluationDetails`, along with all metrics (`AllMetrics`).
 
-After applying the updated configuration:
+3. **Variable for Central Law Workspace**:
+   - This variable is used to pass the ID of your centralized Log Analytics Workspace, which is referenced in the diagnostic settings.
 
-1. Run:
-   ```bash
-   terraform init
-   terraform plan
-   terraform apply
-   ```
+### Steps to Apply:
 
-2. Check the Azure Portal:
-   - Navigate to your Key Vault.
-   - Go to **Diagnostic settings**.
-   - Ensure both **Audit** and **Azure Policy Evaluation Details** logs are listed and enabled.
-   - Confirm that **AllMetrics** is capturing the relevant metrics.
+1. **Update your Terraform files** with the above changes.
+2. **Run `terraform init`** to initialize and download any new providers.
+3. **Run `terraform plan`** to ensure everything is properly configured.
+4. **Run `terraform apply`** to deploy the changes, which should enable diagnostic settings for your Application Insights resource.
 
-### Conclusion
-
-This configuration will comprehensively enable the necessary logging and metrics for your Key Vault to ensure compliance and monitoring needs are met. If you have any further categories or specifics you want to discuss, feel free to ask!
+Let me know if you have further questions or if something isn't working as expected!
