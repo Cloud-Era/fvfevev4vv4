@@ -1,113 +1,72 @@
-To add **central diagnostic settings** to your **Azure Virtual Network** within the existing `terraform-azure-virtual-network` module, you will need to include the **diagnostic setting resource** for the virtual network and configure it to point to the **central Log Analytics Workspace**.
+The provided Terraform configuration for enabling diagnostic settings on an **Azure Key Vault** does cover the essential log and metric categories based on your description. However, let’s break down the specific categories you mentioned and see if any adjustments are needed to ensure all are captured.
 
-Here’s how you can achieve this:
+### Key Vault Diagnostic Settings
 
-### Step 1: Update the `terraform-azure-virtual-network` Module
-You can add the `azurerm_monitor_diagnostic_setting` resource to enable diagnostic logging for your virtual network and point it to the **central Log Analytics Workspace**.
+1. **Log Category Groups**:
+   - **Audit**: This includes `AuditEvent`, which is necessary for capturing audit logs for the Key Vault.
+   - **AllLogs**: This typically encompasses all logs that are available, but you need to explicitly enable individual log categories if they are not part of the default behavior.
 
-In your `terraform-azure-virtual-network/main.tf`, modify it as follows:
+2. **Metric Category**:
+   - **AllMetrics**: This enables the collection of all available metrics for the Key Vault.
+
+### Adjusted Terraform Configuration
+
+To ensure you are capturing both **Audit Logs** and **Azure Policy Evaluation Details**, you can explicitly define the categories within the `logs` block of your Terraform configuration. Here’s an updated version that includes both:
 
 ```hcl
-resource "azurerm_virtual_network" "Vnet" {
-  name                = var.res_vnet_name
-  location            = var.res_location
-  resource_group_name = var.res_vnet_rg_name
-  address_space       = var.res_vnet_address_prefix
-  tags                = var.res_tags
-}
+resource "azurerm_monitor_diagnostic_setting" "akv_diagnostic" {
+  count                     = var.central_law_workspace_id != null ? 1 : 0
+  name                      = format("%s-diagnostic", local.basename)  # Customize this
+  target_resource_id        = var.key_vault_id
+  log_analytics_workspace_id = var.central_law_workspace_id
 
-# Add Central Diagnostic Setting for Virtual Network
-resource "azurerm_monitor_diagnostic_setting" "vnet_diagnostic_central" {
-  name                       = "${azurerm_virtual_network.Vnet.name}-diagnostic-central"
-  target_resource_id         = azurerm_virtual_network.Vnet.id
-  log_analytics_workspace_id = var.central_law_workspace_id  # Variable for Central LAW Workspace
-
+  # Enable logging for Key Vault
   logs {
-    category = "NetworkSecurityGroupEvent"
+    category = "AuditEvent"
     enabled  = true
-
-    retention_policy {
-      enabled = true
-      days    = 30  # Set retention policy as per your requirements
-    }
   }
 
+  # Add Azure Policy Evaluation Details
+  logs {
+    category = "AzurePolicyEvaluationDetails"
+    enabled  = true
+  }
+
+  # Enable metrics for Key Vault
   metrics {
     category = "AllMetrics"
     enabled  = true
+  }
 
-    retention_policy {
-      enabled = true
-      days    = 30
-    }
+  lifecycle {
+    ignore_changes = [log, metric]
   }
 }
 ```
 
-### Step 2: Declare the Central LAW Variable
-In the module's `variables.tf` file, add a new input variable for the **central Log Analytics Workspace ID**:
+### Key Points:
 
-```hcl
-variable "central_law_workspace_id" {
-  description = "The ID of the Centralized Log Analytics Workspace for diagnostics"
-  type        = string
-}
-```
+- **AuditEvent**: This category captures all audit logs from the Key Vault.
+- **AzurePolicyEvaluationDetails**: This additional category captures policy evaluation logs. If this is not included by default in "AllLogs", it ensures you get those details.
+- **AllMetrics**: This captures all metric data available for the Key Vault.
 
-### Step 3: Update the Landing Zone Configuration
-Now that you’ve updated the `terraform-azure-virtual-network` module, you need to pass the `central_law_workspace_id` from the **landing zone module** (`terrafora-azure-component-landing-zone`).
+### Verification in Azure Portal
 
-In your **landing zone module**, update the **Virtual Network** module call as follows:
+After applying the updated configuration:
 
-```hcl
-module "virtual_network" {
-  source                 = "github.com/cloud-era/terraform-azure-virtual-network?ref=init"
-  res_vnet_name          = "routable-${var.location}-vnet-01"
-  res_location           = var.location
-  res_vnet_rg_name       = "eons(${var.eonid})-${var.location}-${var.lz_name}-system-rg"
-  res_vnet_address_prefix = var.vnet_address_prefix
-  res_dns_servers        = null
-  res_tags               = merge(var.tags, var.automation_tags)
-  
-  # Pass the central LAW workspace ID to the virtual network module
-  central_law_workspace_id = var.central_law_workspace_id
-}
-```
+1. Run:
+   ```bash
+   terraform init
+   terraform plan
+   terraform apply
+   ```
 
-### Step 4: Ensure Central LAW Variable is Defined in the Landing Zone
-In the **landing zone module’s `variables.tf`** file, make sure that `central_law_workspace_id` is declared as a variable:
+2. Check the Azure Portal:
+   - Navigate to your Key Vault.
+   - Go to **Diagnostic settings**.
+   - Ensure both **Audit** and **Azure Policy Evaluation Details** logs are listed and enabled.
+   - Confirm that **AllMetrics** is capturing the relevant metrics.
 
-```hcl
-variable "central_law_workspace_id" {
-  description = "The ID of the Centralized Log Analytics Workspace for diagnostics"
-  type        = string
-}
-```
+### Conclusion
 
-### Step 5: Provide the `central_law_workspace_id` Input
-Finally, when calling the **landing zone module** in your main configuration, pass the `central_law_workspace_id` like this:
-
-```hcl
-module "landing_zone" {
-  source                 = "github.com/cloud-era/terrafora-azure-component-landing-zone?ref=init"
-
-  # Other parameters
-  eonid                  = var.eonid
-  location               = var.location
-  lz_name                = var.lz_name
-  short_name             = var.short_name
-  short_env              = var.short_env
-  env                    = var.env_name
-  vnet_address_prefix     = var.vnet_address_prefix
-  tags                   = var.tags
-
-  # Pass Central Log Analytics Workspace ID
-  central_law_workspace_id = var.central_law_workspace_id
-}
-```
-
-### Result:
-- **Diagnostic logs** from the Virtual Network will now be sent to the **central Log Analytics Workspace**.
-- You can configure the logs and metrics categories based on your needs, such as `NetworkSecurityGroupEvent`, `AllMetrics`, or others.
-
-This approach ensures that your virtual network has both functionality and centralized diagnostics.
+This configuration will comprehensively enable the necessary logging and metrics for your Key Vault to ensure compliance and monitoring needs are met. If you have any further categories or specifics you want to discuss, feel free to ask!
