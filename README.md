@@ -1,42 +1,70 @@
-To add the diagnostic settings to your existing `azurerm_application_insights` resource, you can modify your configuration by appending a diagnostic settings resource using the `azurerm_monitor_diagnostic_setting`. Below is the updated code incorporating diagnostic settings for Application Insights, following the structure of your existing configuration.
+Great to hear that the deployment was successful! To ensure that the diagnostic settings for Application Insights are enabled correctly with the desired category groups and metrics, you need to specify the appropriate settings in your Terraform configuration.
 
-### Updated Code Example
+### Updated Diagnostic Settings for Application Insights
+
+If you want to cover all logs and metrics categories for Application Insights as you've described, you should specify the categories explicitly within the `logs` and `metrics` blocks. Here’s how you can do it:
 
 ```hcl
-# Application Insights Resource
-resource "azurerm_application_insights" "main" {
-  for_each                   = { for info in var.res_app_insight_info : info.name => info }
-  name                       = each.key
-  resource_group_name        = var.res_rg_name
-  location                   = var.res_location
-  daily_data_cap_in_gb       = var.daily_data_cap_in_gb
-  sampling_percentage        = var.sampling_percentage
-  internet_ingestion_enabled = var.internet_ingestion_enabled
-  internet_query_enabled     = var.internet_query_enabled
-  workspace_id               = var.workspace_id != null ? var.workspace_id : module.law[0].laws_id
-  application_type           = each.value.app_type
-  daily_data_cap_notifications_disabled = each.value.daily_data_cap_notifications_disabled
-  retention_in_days          = each.value.retention
-  local_authentication_disabled = false  # Example value
-  tags                       = merge(var.tags, var.automation_tags)
-}
-
 # Diagnostic Settings for Application Insights
 resource "azurerm_monitor_diagnostic_setting" "app_insights_diagnostic" {
-  count = var.central_law_workspace_id != "" ? 1 : 0  # Only create if central_law_workspace_id is provided
-
-  name                      = format("%s-diagnostic", azurerm_application_insights.main[each.key].name)
-  target_resource_id        = azurerm_application_insights.main[each.key].id
+  for_each                  = azurerm_application_insights.main  # Set for_each to loop over each Application Insights instance
+  name                      = format("%s-diagnostic", each.value.name)  # each.value references each instance from azurerm_application_insights.main
+  target_resource_id        = each.value.id
   log_analytics_workspace_id = var.central_law_workspace_id  # Centralized Log Analytics Workspace
 
-  # Logs to enable
+  # Enable all log categories
   logs {
-    category = "AuditEvent"
+    category = "AvailabilityResults"
     enabled  = true
   }
 
   logs {
-    category = "AzurePolicyEvaluationDetails"
+    category = "BrowserTimings"
+    enabled  = true
+  }
+
+  logs {
+    category = "Event"
+    enabled  = true
+  }
+
+  logs {
+    category = "Metrics"
+    enabled  = true
+  }
+
+  logs {
+    category = "Dependencies"
+    enabled  = true
+  }
+
+  logs {
+    category = "Exceptions"
+    enabled  = true
+  }
+
+  logs {
+    category = "PageViews"
+    enabled  = true
+  }
+
+  logs {
+    category = "PerformanceCounters"
+    enabled  = true
+  }
+
+  logs {
+    category = "Requests"
+    enabled  = true
+  }
+
+  logs {
+    category = "SystemEvents"
+    enabled  = true
+  }
+
+  logs {
+    category = "Traces"
     enabled  = true
   }
 
@@ -50,34 +78,30 @@ resource "azurerm_monitor_diagnostic_setting" "app_insights_diagnostic" {
     ignore_changes = [log, metric]
   }
 }
-
-# Variables for diagnostic settings
-variable "central_law_workspace_id" {
-  description = "ID of the Centralized Log Analytics Workspace"
-  type        = string
-  default     = null
-}
-
 ```
 
-### Explanation of Changes
+### Key Points:
 
-1. **Application Insights Resource (`azurerm_application_insights`)**:
-   - The structure remains the same, but I updated it to use the correct syntax. The `workspace_id` is dynamically assigned based on whether `var.workspace_id` is provided or not. If not, it falls back to the ID from your law module (`module.law[0].laws_id`).
+1. **Log Categories**: Each log category you want to enable is explicitly defined within a `logs` block. This ensures that all relevant logs are collected for monitoring.
 
-2. **Diagnostic Settings (`azurerm_monitor_diagnostic_setting`)**:
-   - Diagnostic settings are created for each `azurerm_application_insights.main` resource using the `for_each` mechanism from the Application Insights loop.
-   - The `log_analytics_workspace_id` is set to `var.central_law_workspace_id`, which points to the centralized Log Analytics Workspace.
-   - It includes logging categories `AuditEvent` and `AzurePolicyEvaluationDetails`, along with all metrics (`AllMetrics`).
+2. **Metrics**: The `metrics` block specifies that all metrics should be enabled by using the `"AllMetrics"` category.
 
-3. **Variable for Central Law Workspace**:
-   - This variable is used to pass the ID of your centralized Log Analytics Workspace, which is referenced in the diagnostic settings.
+3. **Log Analytics Workspace**: Ensure that the `var.central_law_workspace_id` variable is set correctly to point to your centralized Log Analytics Workspace.
 
-### Steps to Apply:
+### Verification:
 
-1. **Update your Terraform files** with the above changes.
-2. **Run `terraform init`** to initialize and download any new providers.
-3. **Run `terraform plan`** to ensure everything is properly configured.
-4. **Run `terraform apply`** to deploy the changes, which should enable diagnostic settings for your Application Insights resource.
+After applying these changes, you can verify in the Azure Portal:
 
-Let me know if you have further questions or if something isn't working as expected!
+1. Navigate to your Application Insights resource.
+2. Go to the **Diagnostic settings** section.
+3. Check if the log categories and metrics are set up as specified.
+
+### Troubleshooting:
+
+If the diagnostic settings are still not appearing as expected:
+
+- **Check for Errors**: Look at the Terraform output logs during deployment for any error messages.
+- **Permissions**: Ensure that the service principal or user deploying these settings has the necessary permissions to modify diagnostic settings on the Application Insights resource.
+- **Propagation Time**: Sometimes it takes a little while for changes to reflect in the Azure Portal. You might need to refresh the page or wait a few minutes.
+
+This should cover all the required logs and metrics for your Application Insights diagnostics! If you encounter any issues, feel free to reach out for further assistance.
