@@ -1,26 +1,13 @@
-Thank you for the clarification! If you simply want a report from GitHub that includes:
+You're encountering the error because I incorrectly assumed that GitHub's file contents are base64-decoded directly via the `decode('base64')` method. However, GitHub's API response contains a `content` field that is already base64-encoded, and you'll need to decode it properly using Python's `base64` module.
 
-1. **Repository name**
-2. **Eon ID**
-3. **Repositories using Angular 12 framework**
+Let me fix that and show you how to decode the content correctly.
 
-We can streamline the process without using local files like SBOMs or a CSV mapping file. Instead, we'll:
-
-1. Fetch repositories from your GitHub organization.
-2. For each repository, we'll check its SBOM (or package manager files, if available) to detect if it references Angular version 12.
-3. Return the `repo_name` and `eon_id` (if available) in the report.
-
-### Key Assumptions:
-- The **SBOM** or dependency information (like `package.json`) is stored in the repository, either in a `package.json` or as part of the repository contents, and contains Angular 12 if used.
-- The `eon_id` is fetched using repository properties or stored in some standard way in the repo (this part may vary depending on how you manage eon_id in your repos).
-
-### Simple Script (GitHub API):
-
-Here's a Python script that meets your requirements:
+### Updated Script:
 
 ```python
 import requests
 import json
+import base64
 
 # GitHub token and organization name
 GITHUB_TOKEN = "your_github_token_here"  # Replace with your actual GitHub token
@@ -51,10 +38,12 @@ def check_angular_dependency(repo_name):
 
     if response.status_code == 200:
         package_json = response.json()
-        content = package_json.get('content')
-        
-        if content:
-            package_data = json.loads(content.decode('base64'))  # GitHub sends file content base64 encoded
+
+        # GitHub returns file content as base64 encoded
+        if "content" in package_json:
+            content = base64.b64decode(package_json['content']).decode('utf-8')  # Decode the base64 content
+            package_data = json.loads(content)
+
             dependencies = package_data.get("dependencies", {})
 
             # Check if Angular version 12 is listed in dependencies
@@ -104,26 +93,16 @@ if __name__ == "__main__":
     main()
 ```
 
-### Key Points:
+### Explanation of Fixes:
+1. **Base64 Decoding**:
+   - GitHub returns file content in base64-encoded form. Instead of using `.decode('base64')`, we use the `base64` module to properly decode it.
+   - `base64.b64decode(package_json['content'])` decodes the base64 content.
+   - After decoding, it’s converted into a string using `.decode('utf-8')`.
 
-1. **Fetching Repositories:**
-   - The function `get_repositories()` retrieves all repositories from the organization using GitHub API.
+2. **Package Dependency Check**:
+   - The decoded content is loaded into a JSON object to check for Angular dependencies.
 
-2. **Checking Angular Dependency:**
-   - The function `check_angular_dependency()` looks into the `package.json` file of the repository (or another file you might use) to check if Angular 12 is listed as a dependency.
-   - It decodes the content from base64 (GitHub sends file content encoded) and then parses it to find Angular 12.
+### Run and Test:
+This updated script should now work without the previous `AttributeError`. It will fetch repositories, decode the `package.json` file's base64 content, and check if Angular version 12 is present in the dependencies.
 
-3. **Fetching `eon_id`:**
-   - The function `fetch_eon_id()` is a placeholder. You’ll need to modify it to suit your needs based on where/how the `eon_id` is stored in your repos.
-   
-4. **Generating Report:**
-   - `generate_report()` compiles the information into a list and prints a report showing the repository name and `eon_id` for those using Angular 12.
-
-### Customizing for Your Environment:
-- **Modify `fetch_eon_id()`**: Customize this function to retrieve the `eon_id` based on your repository setup.
-- **Modify File Locations**: The script looks for a `package.json` file in each repository, but if Angular dependencies are stored elsewhere, adjust the file path or the file being checked.
-
-### Output:
-The script will print out repositories that are using Angular 12 and their associated `eon_id`. You can modify the script to save the report to a CSV or any other format as needed.
-
-Let me know if you need any further adjustments or clarifications!
+Let me know if you need further modifications!
