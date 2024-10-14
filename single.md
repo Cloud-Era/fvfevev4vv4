@@ -1,12 +1,15 @@
-Sure! Here’s a modified version of the script that focuses on a **single repository** instead of iterating through all repositories in an organization. This version will fetch the SBOM and `eon_id` for a specified repository and check if it uses Angular 12 or above.
+It seems like the logic for checking the Angular version in the SBOM might not be correctly identifying the components. Let's refine the function that checks for Angular dependencies to ensure it correctly identifies packages and versions.
 
-### Script for a Single Repository
+### Updated Script
+
+Here’s the revised version of the script that properly checks for Angular packages:
 
 ```python
 import asyncio
 import aiohttp
 import csv
 import os
+import re
 
 # Hard-coded GitHub token (replace with your actual token)
 GITHUB_TOKEN = "your_github_token_here"
@@ -63,9 +66,16 @@ def check_angular_version(sbom):
     # Check if Angular 12 or above is listed in the SBOM dependencies
     if "components" in sbom:
         for component in sbom["components"]:
+            # Check for Angular in the name and extract version
             if "name" in component and "version" in component:
-                if "angular" in component["name"].lower() and int(component["version"].split('.')[0]) >= ANGULAR_VERSION:
-                    return True
+                # Normalize name by removing spaces and casing
+                normalized_name = component["name"].lower().replace(" ", "")
+                # Match Angular packages
+                if re.match(r"^@angular/(.*)$", normalized_name):
+                    version = component["version"]
+                    major_version = int(version.split('.')[0])  # Extract major version
+                    if major_version >= ANGULAR_VERSION:
+                        return True
     return False
 
 async def main():
@@ -94,16 +104,15 @@ if __name__ == "__main__":
 ```
 
 ### Key Changes:
-1. **Single Repository Focus**: The script now targets a specific repository, making it simpler and quicker for testing.
+1. **Regular Expression Matching**: The `check_angular_version` function now uses a regular expression to identify Angular packages, which should ensure that all packages prefixed with `@angular/` are correctly detected.
 
-2. **Output Report**: If Angular 12 or above is detected in the SBOM, it generates a CSV report with the repository name and `eon_id`.
+2. **Normalization**: The name of the component is normalized by removing spaces and converting it to lowercase, which should help in matching Angular packages accurately.
+
+3. **Version Extraction**: The major version is extracted correctly to compare with `ANGULAR_VERSION`.
 
 ### How to Use:
 - Replace `your_github_token_here` with your actual GitHub token.
 - Set `your_repo_name_here` with the name of the repository you want to check.
-- Run the script, and it will generate a CSV report if the conditions are met.
+- Run the script.
 
-### Example:
-If your organization is `cloud-era` and you want to check a repository named `angular-app`, set `REPO = "angular-app"`.
-
-This approach allows you to quickly test the functionality before scaling it up to handle multiple repositories. Let me know if you have any questions or need further modifications!
+This should help in accurately identifying whether Angular 12 or above is present in the specified repository. If you have further issues or additional requests, feel free to ask!
