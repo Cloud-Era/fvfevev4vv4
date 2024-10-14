@@ -1,18 +1,39 @@
-To enable diagnostic settings for an **Azure Data Factory (ADF)** instance, you can follow a similar approach as with other resources like Key Vault and App Insights. Here's how you can set up diagnostic settings for your ADF instance, including enabling all logs and metrics:
+To enable diagnostic settings for your **Azure Data Factory (ADF)** instance using the `azurerm_data_factory` resource defined in your `main.tf`, you can extend it by adding a diagnostic settings block. Here's how you can do it:
 
 ### Step-by-Step: Enable Diagnostic Settings for ADF
 
-1. **Set up variables** (if you don't already have them):
-   - **`central_law_workspace_id`**: This should hold the Log Analytics Workspace ID.
-   - **`adf_id`**: This should hold the ADF instance's resource ID.
+1. **Extend your existing ADF resource**:
 
-2. **Define Diagnostic Settings for ADF**:
+You already have the following code for creating the ADF instance:
+
+```hcl
+# Creating Azure Data Factory
+resource "azurerm_data_factory" "adf" {
+  name                = var.adf_name
+  location            = var.location
+  resource_group_name = var.resource_group_name
+
+  lifecycle {
+    ignore_changes = [
+      tags["created"]
+    ]
+  }
+
+  tags = {
+    environment = var.environment
+  }
+}
+```
+
+Now, we will add the diagnostic settings.
+
+2. **Add Diagnostic Settings for ADF**:
 
 ```hcl
 # Enable Diagnostic Settings for Azure Data Factory
 resource "azurerm_monitor_diagnostic_setting" "adf_diagnostic" {
-  name                      = format("%s-diagnostic", azurerm_data_factory.main.name) # Set the diagnostic name
-  target_resource_id        = azurerm_data_factory.main.id                            # ADF instance ID
+  name                       = format("%s-diagnostic", azurerm_data_factory.adf.name) # Diagnostic name
+  target_resource_id         = azurerm_data_factory.adf.id                            # ADF instance ID
   log_analytics_workspace_id = var.central_law_workspace_id                           # Centralized LAW ID
 
   # Enable all logs
@@ -34,41 +55,24 @@ resource "azurerm_monitor_diagnostic_setting" "adf_diagnostic" {
 ```
 
 ### Explanation:
-- **`target_resource_id`**: The ID of the ADF instance, which comes from the `azurerm_data_factory.main.id` resource.
-- **`log_analytics_workspace_id`**: This refers to the centralized Log Analytics workspace where the logs and metrics will be sent.
-- **`category_group = "allLogs"`**: Enables all logs related to ADF (e.g., PipelineRun, ActivityRun, TriggerRun).
-- **`category = "AllMetrics"`**: Enables all metrics tracking for ADF.
+- **`target_resource_id`**: This points to your ADF instance's ID (`azurerm_data_factory.adf.id`).
+- **`log_analytics_workspace_id`**: This references the centralized Log Analytics workspace ID, which should be passed in as a variable (`var.central_law_workspace_id`).
+- **`category_group = "allLogs"`**: This will enable logging for all categories related to ADF (such as `PipelineRun`, `ActivityRun`, `TriggerRun`).
+- **`category = "AllMetrics"`**: This enables all metrics for the ADF instance.
 
-3. **Variable Example**:
+### Variables
 
-In your `variables.tf` file, you should have:
+Make sure you have the necessary variables in your `variables.tf` file:
 
 ```hcl
 variable "central_law_workspace_id" {
   description = "The ID of the Centralized Log Analytics Workspace for diagnostics"
   type        = string
 }
-
-variable "adf_id" {
-  description = "The ID of the Azure Data Factory instance"
-  type        = string
-}
-```
-
-4. **Resource Example** (for creating ADF):
-
-If you're creating the ADF instance as part of this Terraform module, you could define it like this:
-
-```hcl
-resource "azurerm_data_factory" "main" {
-  name                = "my-adf-instance"
-  location            = var.location
-  resource_group_name = var.resource_group_name
-}
 ```
 
 ### Final Notes:
-- **Metrics and Logs**: You’re enabling all logs and metrics, so any unsupported ones will be ignored automatically by Azure.
-- **Error Handling**: If any log category or metric isn’t supported, the system will skip it without throwing an error.
+- **Error Handling**: If some logs or metrics are not supported, they will be ignored by Azure, and the remaining valid settings will be applied.
+- **Customization**: If you want to be more specific about logs or metrics, you can modify the `logs` and `metrics` blocks to include only relevant categories.
 
-Let me know if this setup works for you!
+Let me know if this works or if you run into any issues!
