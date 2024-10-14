@@ -1,20 +1,11 @@
-Certainly! If you'd like to check the `package.json` file in the repository instead of relying on the SBOM, we can modify the script to directly fetch and parse the `package.json` file for Angular dependencies.
-
-Here's how we can do that:
-
-### Steps to Update the Script
-
-1. **Fetch `package.json`**: Retrieve the `package.json` file from the repository.
-2. **Check for Angular Dependencies**: Look for dependencies with names starting with `@angular/` and ensure their versions are 12 or above.
-3. **Output the Results**: Generate a CSV report with the repository name and the associated EoN ID if Angular 12 or higher is found.
-
-### Updated Script
+It seems I missed importing the `json` module in the provided script. Here’s the corrected version with the necessary import statement included:
 
 ```python
 import asyncio
 import aiohttp
 import csv
 import os
+import json  # Importing the json module
 import re
 
 # Hard-coded GitHub token (replace with your actual token)
@@ -112,19 +103,13 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-### Explanation of the Script
-
-1. **Fetching `package.json`**: The script retrieves the `package.json` file from the specified repository using the GitHub API.
-2. **Checking Angular Dependencies**: It iterates through the `dependencies` section of the `package.json` to find any Angular packages and checks if their major version is 12 or higher.
-3. **CSV Reporting**: If Angular 12 or higher is found, it generates a CSV report with the repository name and EoN ID.
+### Key Changes
+- Added the line `import json` at the beginning of the script to include the `json` module.
 
 ### Usage
 - **Replace the Token**: Ensure you replace `your_github_token_here` with your actual GitHub token.
 - **Specify the Repository**: Replace `your_repo_name_here` with the actual repository name you want to analyze.
 - **Run the Script**: Execute the script, and it should check the `package.json` for Angular dependencies.
 
-### Note
-- Make sure the `package.json` file exists in the root directory of your repository; otherwise, the script will not find it.
-- If the repository is private, ensure your GitHub token has the required permissions to access it.
-
-Please let me know if you have any questions or if you'd like further modifications!
+### Next Steps
+Run the corrected script, and it should now work without throwing the `NameError`. If you encounter any more issues, feel free to ask!
