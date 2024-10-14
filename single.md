@@ -1,4 +1,12 @@
-It seems I missed importing the `json` module in the provided script. Here’s the corrected version with the necessary import statement included:
+The `json.decoder.JSONDecodeError: Expecting value: line 1 column 1` error usually occurs when the response from the API is empty or not valid JSON. In the case of fetching the `package.json`, it might be that the request didn't return a valid response.
+
+### Steps to Diagnose and Fix the Issue
+
+1. **Check API Response**: Before trying to parse the JSON response, we should print the raw response to see what it looks like. This will help us determine if the API is returning an error or if the file doesn’t exist.
+
+2. **Error Handling**: Improve error handling to manage situations where the `package.json` file is not found or when the API rate limits are hit.
+
+Here’s the modified code to add debugging information:
 
 ```python
 import asyncio
@@ -6,7 +14,6 @@ import aiohttp
 import csv
 import os
 import json  # Importing the json module
-import re
 
 # Hard-coded GitHub token (replace with your actual token)
 GITHUB_TOKEN = "your_github_token_here"
@@ -35,12 +42,13 @@ async def get_package_json(session, org, repo):
     package_json_url = f"https://api.github.com/repos/{org}/{repo}/contents/package.json"
     async with session.get(package_json_url, headers=headers) as response:
         if response.status == 200:
-            # Decode the base64 content
             content = await response.json()
+            # Decode the base64 content
             package_json_content = json.loads(content['content'])
             return package_json_content
         else:
             print(f"Error fetching package.json for {repo}: {response.status}")
+            print(await response.text())  # Print raw response for debugging
             return None
 
 async def get_repo_id(session, org, repo):
@@ -104,12 +112,11 @@ if __name__ == "__main__":
 ```
 
 ### Key Changes
-- Added the line `import json` at the beginning of the script to include the `json` module.
-
-### Usage
-- **Replace the Token**: Ensure you replace `your_github_token_here` with your actual GitHub token.
-- **Specify the Repository**: Replace `your_repo_name_here` with the actual repository name you want to analyze.
-- **Run the Script**: Execute the script, and it should check the `package.json` for Angular dependencies.
+- **Debugging Output**: The line `print(await response.text())` is added to display the raw response when there’s an error fetching the `package.json`. This should give you insight into what the API is returning (e.g., error message or other unexpected content).
 
 ### Next Steps
-Run the corrected script, and it should now work without throwing the `NameError`. If you encounter any more issues, feel free to ask!
+1. **Run the Modified Script**: After updating the script, run it again and check the output for any additional error messages or information that can help diagnose the issue.
+2. **Verify the Repository Name**: Make sure that the `REPO` variable has the correct name of the repository you want to analyze.
+3. **Check Permissions**: Ensure that the GitHub token has the necessary permissions to access the repository contents.
+
+If the issue persists or if you see specific error messages in the output, let me know!
