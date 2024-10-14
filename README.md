@@ -1,39 +1,39 @@
-In this script, since you're working with **local SBOM files** stored in a folder, you don't need to pass the organization name or GitHub token. However, if your plan is to **fetch SBOMs directly from GitHub or through an API** for each repository under an organization, you'll need to integrate GitHub API calls to get those SBOMs.
+Thank you for the clarification! If you simply want a report from GitHub that includes:
 
-Here’s how you can modify the script to pass the **GitHub organization name** and **token**, fetch the SBOMs from GitHub repositories dynamically, and then check for the presence of Angular 12 dependencies:
+1. **Repository name**
+2. **Eon ID**
+3. **Repositories using Angular 12 framework**
 
-### Modifying the Script to Fetch SBOMs from GitHub:
+We can streamline the process without using local files like SBOMs or a CSV mapping file. Instead, we'll:
 
-1. **Set GitHub Organization Name and Token**.
-2. **Fetch SBOM files from GitHub** for each repository in the organization.
+1. Fetch repositories from your GitHub organization.
+2. For each repository, we'll check its SBOM (or package manager files, if available) to detect if it references Angular version 12.
+3. Return the `repo_name` and `eon_id` (if available) in the report.
 
-Here’s the updated script with GitHub API integration:
+### Key Assumptions:
+- The **SBOM** or dependency information (like `package.json`) is stored in the repository, either in a `package.json` or as part of the repository contents, and contains Angular 12 if used.
+- The `eon_id` is fetched using repository properties or stored in some standard way in the repo (this part may vary depending on how you manage eon_id in your repos).
+
+### Simple Script (GitHub API):
+
+Here's a Python script that meets your requirements:
 
 ```python
-import os
-import json
-import csv
 import requests
+import json
 
-# GitHub token and org name
-GITHUB_TOKEN = "your_github_token_here"
-ORG_NAME = "cloud-era"  # Replace with the name of your organization
-
-# Constants for paths
-CURRENT_DIR = os.getcwd()
-
-# Use the current directory for SBOM_FOLDER_PATH and MAPPING_CSV if you're saving any local files
-SBOM_FOLDER_PATH = os.path.join(CURRENT_DIR, "sboms")
-MAPPING_CSV = os.path.join(CURRENT_DIR, "sbom_mapping.csv")
+# GitHub token and organization name
+GITHUB_TOKEN = "your_github_token_here"  # Replace with your actual GitHub token
+ORG_NAME = "cloud-era"  # Replace with your organization name
 ANGULAR_VERSION = "12"
 
-# GitHub headers with authentication token
+# GitHub headers
 HEADERS = {
     "Authorization": f"token {GITHUB_TOKEN}",
     "Accept": "application/vnd.github+json",
 }
 
-# Fetch list of repositories from GitHub for the given organization
+# Fetch the list of repositories from the organization
 def get_repositories(org_name):
     url = f"https://api.github.com/orgs/{org_name}/repos?per_page=100"
     response = requests.get(url, headers=HEADERS)
@@ -44,102 +44,86 @@ def get_repositories(org_name):
         print(f"Failed to fetch repositories. Status code: {response.status_code}")
         return []
 
-# Fetch the latest SBOM for a repository (this assumes you're storing SBOMs in repo releases or similar)
-def fetch_sbom_for_repo(org_name, repo_name):
-    sbom_url = f"https://api.github.com/repos/{org_name}/{repo_name}/contents/sbom.json"  # Assuming sbom.json is used
-    response = requests.get(sbom_url, headers=HEADERS)
+# Check for Angular 12 in package.json (or another file that lists dependencies)
+def check_angular_dependency(repo_name):
+    url = f"https://api.github.com/repos/{ORG_NAME}/{repo_name}/contents/package.json"  # Modify if needed
+    response = requests.get(url, headers=HEADERS)
 
     if response.status_code == 200:
-        sbom_data = response.json()
-        sbom_content = sbom_data['content']
-        return json.loads(sbom_content)
-    else:
-        print(f"Failed to fetch SBOM for {repo_name}. Status code: {response.status_code}")
-        return None
+        package_json = response.json()
+        content = package_json.get('content')
+        
+        if content:
+            package_data = json.loads(content.decode('base64'))  # GitHub sends file content base64 encoded
+            dependencies = package_data.get("dependencies", {})
 
-# Check for Angular 12 dependency in the SBOM
-def check_angular_dependency(sbom_data):
-    components = sbom_data.get("components", [])
-    for component in components:
-        if component.get("name") == "angular" and component.get("version", "").startswith(ANGULAR_VERSION):
-            return True
+            # Check if Angular version 12 is listed in dependencies
+            if "angular" in dependencies and dependencies["angular"].startswith(ANGULAR_VERSION):
+                return True
     return False
 
-# Load the mapping of repositories to eon_ids
-def load_eon_id_mapping(csv_file):
-    repo_to_eon_id = {}
-    with open(csv_file, mode='r') as file:
-        reader = csv.DictReader(file)
-        for row in reader:
-            repo_to_eon_id[row['sbom_name']] = row['eon_id']
-    return repo_to_eon_id
+# Fetch eon_id from repository properties (assume eon_id is stored somewhere like in the properties)
+def fetch_eon_id(repo_name):
+    # Placeholder: Modify this to fetch the actual eon_id for the repo, if stored somewhere
+    # In this example, I'm assuming you have an API or a standard location for eon_id
+    return "eon_id_placeholder"  # Replace with actual logic to fetch eon_id
 
-# Generate a report of repositories referencing Angular 12
-def generate_report(org_name, mapping_csv):
-    repositories = get_repositories(org_name)
-    eon_id_mapping = load_eon_id_mapping(mapping_csv)
+# Generate a report for repositories using Angular 12
+def generate_report():
+    repositories = get_repositories(ORG_NAME)
     report = []
 
     for repo in repositories:
         repo_name = repo['name']
-        print(f"Fetching SBOM for {repo_name}...")
-        sbom_data = fetch_sbom_for_repo(org_name, repo_name)
-        
-        if sbom_data and check_angular_dependency(sbom_data):
-            eon_id = eon_id_mapping.get(repo_name, "N/A")
-            report.append({"repository": repo_name, "eon_id": eon_id})
+        print(f"Checking Angular dependency for {repo_name}...")
+
+        # Check if the repo uses Angular 12
+        if check_angular_dependency(repo_name):
+            # Fetch eon_id (assuming it's available in some form)
+            eon_id = fetch_eon_id(repo_name)
+            report.append({"repo_name": repo_name, "eon_id": eon_id})
 
     return report
 
-# Save the report to a CSV file
-def save_report_to_csv(report, output_file):
-    with open(output_file, 'w', newline='') as csvfile:
-        fieldnames = ['repository', 'eon_id']
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-
-        writer.writeheader()
-        for row in report:
-            writer.writerow(row)
-
-# Main function to generate the report
+# Main function to generate and print the report
 def main():
-    mapping_csv = MAPPING_CSV
-    output_csv = os.path.join(CURRENT_DIR, "angular12_repos_with_eon_id.csv")  # Output in current directory
+    print(f"Generating report for organization: {ORG_NAME}")
+    report = generate_report()
 
-    if not os.path.exists(mapping_csv):
-        print(f"Mapping CSV '{mapping_csv}' does not exist. Please check the path.")
-        return
-
-    print(f"Generating report for organization: {ORG_NAME}...")
-    report = generate_report(ORG_NAME, mapping_csv)
-    save_report_to_csv(report, output_csv)
-
-    print(f"Report saved to {output_csv}")
+    # Print the results
+    if report:
+        print("\nRepositories using Angular 12:")
+        print("{:<30} {:<20}".format("Repository", "Eon ID"))
+        print("-" * 50)
+        for entry in report:
+            print(f"{entry['repo_name']:<30} {entry['eon_id']:<20}")
+    else:
+        print("No repositories found using Angular 12.")
 
 if __name__ == "__main__":
     main()
 ```
 
-### Key Changes:
-1. **GitHub Organization and Token**:
-   - `GITHUB_TOKEN`: You need to replace `"your_github_token_here"` with your actual GitHub token that has permission to access the organization repositories.
-   - `ORG_NAME`: Set your organization name.
+### Key Points:
 
-2. **Fetching Repositories**:
-   - The function `get_repositories` fetches all repositories for the given organization using the GitHub API.
+1. **Fetching Repositories:**
+   - The function `get_repositories()` retrieves all repositories from the organization using GitHub API.
 
-3. **Fetching SBOM**:
-   - The function `fetch_sbom_for_repo` retrieves the SBOM for a given repository. It assumes the SBOM is stored as a file in the repository (e.g., `sbom.json`). You might need to adjust this path based on where SBOMs are stored.
+2. **Checking Angular Dependency:**
+   - The function `check_angular_dependency()` looks into the `package.json` file of the repository (or another file you might use) to check if Angular 12 is listed as a dependency.
+   - It decodes the content from base64 (GitHub sends file content encoded) and then parses it to find Angular 12.
 
-4. **Checking for Angular 12**:
-   - `check_angular_dependency` checks if Angular 12 is listed as a dependency in the SBOM.
+3. **Fetching `eon_id`:**
+   - The function `fetch_eon_id()` is a placeholder. You’ll need to modify it to suit your needs based on where/how the `eon_id` is stored in your repos.
+   
+4. **Generating Report:**
+   - `generate_report()` compiles the information into a list and prints a report showing the repository name and `eon_id` for those using Angular 12.
 
-5. **Generate and Save Report**:
-   - The `generate_report` function creates a report for repositories that reference Angular 12 and associates them with the corresponding `eon_id` from the mapping CSV.
-   - `save_report_to_csv` saves the report to a CSV file.
+### Customizing for Your Environment:
+- **Modify `fetch_eon_id()`**: Customize this function to retrieve the `eon_id` based on your repository setup.
+- **Modify File Locations**: The script looks for a `package.json` file in each repository, but if Angular dependencies are stored elsewhere, adjust the file path or the file being checked.
 
 ### Output:
-- The script will output a CSV file `angular12_repos_with_eon_id.csv`, listing all repositories using Angular 12 along with their associated `eon_id` from the mapping.
+The script will print out repositories that are using Angular 12 and their associated `eon_id`. You can modify the script to save the report to a CSV or any other format as needed.
 
-### Assumptions:
-- SBOMs are stored in each GitHub repository under a file (e.g., `sbom.json`). If SBOMs are stored elsewhere (like in releases or other artifacts), you'll need to adjust the `fetch_sbom_for_repo` function accordingly.
+Let me know if you need any further adjustments or clarifications!
