@@ -1,10 +1,10 @@
-Sure! Based on your request, I'll create a script that fetches repositories from a GitHub organization and checks for the use of Angular 12 or above in their SBOM (Software Bill of Materials). This will include gathering the repository name, `eon_id`, and a flag indicating whether the repo uses Angular 12 or above.
+Understood! Let's simplify the script to generate a CSV report containing only the repository name and the associated `eon_id` for repositories that use Angular 12 or above, while excluding archived repositories. The output will be saved in a CSV format instead of JSON files.
 
 Here’s the updated script:
 
 ```python
 import requests
-import json
+import csv
 import os
 import time
 
@@ -17,8 +17,8 @@ ID_PROPERTY_NAME = "eon_id"  # Change this to "EoNID" if needed
 # Organization name
 ORG = "cloud-era"
 
-# Output folder
-OUTPUT_FOLDER = f"{ORG}_repos_output"
+# Output CSV file path
+OUTPUT_CSV = f"{ORG}_repos_with_angular.csv"
 
 # Define Angular version to check
 ANGULAR_VERSION = 12
@@ -94,34 +94,7 @@ def check_angular_version(sbom):
                     return True
     return False
 
-def process_repo(org, repo_name):
-    print(f"Processing {repo_name}...")
-    sbom = get_repo_sbom(org, repo_name)
-    id_value = get_repo_id(org, repo_name)
-
-    if sbom is not None:
-        uses_angular = check_angular_version(sbom)
-    else:
-        uses_angular = False  # Assume no Angular if SBOM fetching fails
-
-    output = {
-        "repository": f"{org}/{repo_name}",
-        ID_PROPERTY_NAME: id_value,
-        "uses_angular": uses_angular
-    }
-
-    # Save JSON output to file
-    filename = f"{repo_name}_report.json"
-    filepath = os.path.join(OUTPUT_FOLDER, filename)
-    with open(filepath, 'w') as f:
-        json.dump(output, f, indent=2)
-    print(f"Output for {repo_name} saved to {filepath}")
-
 def main():
-    # Create output folder if it doesn't exist
-    if not os.path.exists(OUTPUT_FOLDER):
-        os.makedirs(OUTPUT_FOLDER)
-
     print(f"Fetching repositories for {ORG}...")
     repos = get_org_repos(ORG)
 
@@ -131,29 +104,45 @@ def main():
 
     print(f"Found {len(repos)} repositories. Processing each repository...")
 
-    for repo in repos:
-        process_repo(ORG, repo['name'])
-        time.sleep(1)  # To avoid hitting rate limits
+    with open(OUTPUT_CSV, mode='w', newline='', encoding='utf-8') as csvfile:
+        fieldnames = ['repository', 'eon_id']
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
 
-    print(f"\nAll repositories processed. Outputs saved in the '{OUTPUT_FOLDER}' folder.")
+        for repo in repos:
+            if repo['archived']:
+                continue  # Skip archived repositories
+
+            sbom = get_repo_sbom(ORG, repo['name'])
+            id_value = get_repo_id(ORG, repo['name'])
+
+            if sbom is not None and check_angular_version(sbom):
+                writer.writerow({
+                    'repository': f"{ORG}/{repo['name']}",
+                    'eon_id': id_value
+                })
+                print(f"Added {repo['name']} to report.")
+
+            time.sleep(1)  # To avoid hitting rate limits
+
+    print(f"\nReport generated: '{OUTPUT_CSV}'")
 
 if __name__ == "__main__":
     main()
 ```
 
 ### Key Changes:
-1. **Check for Angular Version**:
-   - The function `check_angular_version` checks if Angular 12 or above is listed in the SBOM by examining the `"components"` field.
+1. **CSV Output**: The script now generates a CSV file named `cloud-era_repos_with_angular.csv` containing:
+   - `repository`: The repository name.
+   - `eon_id`: The associated `eon_id`.
 
-2. **Output Structure**:
-   - Each repository's report will include:
-     - `repository`: The full repository name (e.g., `cloud-era/repo-name`).
-     - `eon_id`: The associated Eon ID.
-     - `uses_angular`: A boolean indicating whether the repository uses Angular 12 or above.
+2. **Archiving Check**: The script skips any repositories that are archived.
+
+3. **Removed JSON Output**: The script no longer saves individual repository data in JSON format.
 
 ### Running the Script:
 - Replace `your_github_token_here` with your actual GitHub token.
-- Ensure your GitHub organization name is correct.
-- Run the script. It will process each repository in the specified organization and save the output as JSON files in the designated output folder.
+- Ensure the organization name (`ORG`) is correct.
+- Run the script, and it will create a CSV file in the same directory as the script.
 
-Let me know if you have any further questions or need additional modifications!
+Let me know if you need any further adjustments or assistance!
