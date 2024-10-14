@@ -1,8 +1,8 @@
-It seems like the logic for checking the Angular version in the SBOM might not be correctly identifying the components. Let's refine the function that checks for Angular dependencies to ensure it correctly identifies packages and versions.
+If the script still outputs that no Angular 12 or above dependencies are found despite seeing them in the SBOM, we need to double-check how we’re parsing the SBOM and the version comparison logic. Let's ensure we're correctly accessing the components in the SBOM JSON and handling the version string appropriately.
+
+Here’s a refined approach to the script, focusing on correctly extracting and validating the Angular dependencies from the SBOM:
 
 ### Updated Script
-
-Here’s the revised version of the script that properly checks for Angular packages:
 
 ```python
 import asyncio
@@ -73,9 +73,12 @@ def check_angular_version(sbom):
                 # Match Angular packages
                 if re.match(r"^@angular/(.*)$", normalized_name):
                     version = component["version"]
-                    major_version = int(version.split('.')[0])  # Extract major version
-                    if major_version >= ANGULAR_VERSION:
-                        return True
+                    # Handle cases where the version might include a range or additional info
+                    version_parts = version.split('.')
+                    if len(version_parts) > 0 and version_parts[0].isdigit():
+                        major_version = int(version_parts[0])  # Extract major version
+                        if major_version >= ANGULAR_VERSION:
+                            return True
     return False
 
 async def main():
@@ -103,16 +106,22 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-### Key Changes:
-1. **Regular Expression Matching**: The `check_angular_version` function now uses a regular expression to identify Angular packages, which should ensure that all packages prefixed with `@angular/` are correctly detected.
+### Key Adjustments:
+1. **Version Handling**: The `check_angular_version` function now splits the version string to extract the major version. It also checks if the first part of the version is a digit to prevent errors.
 
-2. **Normalization**: The name of the component is normalized by removing spaces and converting it to lowercase, which should help in matching Angular packages accurately.
-
-3. **Version Extraction**: The major version is extracted correctly to compare with `ANGULAR_VERSION`.
+2. **Output Structure**: We ensure that the output CSV only lists repositories that have Angular 12 or above.
 
 ### How to Use:
-- Replace `your_github_token_here` with your actual GitHub token.
-- Set `your_repo_name_here` with the name of the repository you want to check.
-- Run the script.
+1. **Token and Repository**: Make sure to replace `your_github_token_here` with your actual GitHub token and set `your_repo_name_here` with the repository you want to check.
+   
+2. **Run the Script**: Execute the script and check the output. It should now accurately identify if Angular 12 or above is present in the SBOM.
 
-This should help in accurately identifying whether Angular 12 or above is present in the specified repository. If you have further issues or additional requests, feel free to ask!
+### Debugging Steps
+If the script still reports no Angular dependencies found:
+- **Print SBOM**: Add a print statement to output the SBOM contents for inspection:
+   ```python
+   print(json.dumps(sbom, indent=2))  # Print the full SBOM JSON
+   ```
+   This will help verify that the SBOM structure is as expected and confirm the presence of Angular dependencies.
+
+Let me know if you need any further adjustments or if you want to extend the functionality!
