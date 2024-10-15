@@ -1,8 +1,6 @@
-The code I provided earlier partially covers the diagnostic settings for the Storage Account, but it can be extended to ensure that it includes **all the diagnostic categories** (blob, queue, table, and file services) and **all log and metric categories** as you see in the portal.
+To ensure diagnostic settings are enabled for **Queue**, **Table**, and **File** services, alongside **Blob**, you need to explicitly define logs and metrics for each of these services. Here's how you can update the `azurerm_monitor_diagnostic_setting` resource to include the logs and metrics for **Queue**, **Table**, and **File** services.
 
-Here's how you can update the `azurerm_monitor_diagnostic_setting` resource to cover all the log and metric categories for **blob**, **queue**, **table**, and **file** services, including audit logs and capacity metrics.
-
-### Updated Diagnostic Setting Code for Storage Account:
+### Full Diagnostic Settings for Storage Account (Blob, Queue, Table, File)
 
 ```hcl
 resource "azurerm_monitor_diagnostic_setting" "storage_diagnostic" {
@@ -11,7 +9,7 @@ resource "azurerm_monitor_diagnostic_setting" "storage_diagnostic" {
 
   log_analytics_workspace_id = var.log_analytics_workspace_id
 
-  # Log categories for Blob Service
+  # Blob Service Log Categories
   log {
     category = "StorageRead"
     enabled  = true
@@ -39,8 +37,9 @@ resource "azurerm_monitor_diagnostic_setting" "storage_diagnostic" {
     }
   }
 
+  # Queue Service Log Categories
   log {
-    category = "AuditLogs"
+    category = "QueueOperation"
     enabled  = true
     retention_policy {
       enabled = false
@@ -48,8 +47,9 @@ resource "azurerm_monitor_diagnostic_setting" "storage_diagnostic" {
     }
   }
 
+  # Table Service Log Categories
   log {
-    category = "AllLogs"
+    category = "TableOperation"
     enabled  = true
     retention_policy {
       enabled = false
@@ -57,7 +57,17 @@ resource "azurerm_monitor_diagnostic_setting" "storage_diagnostic" {
     }
   }
 
-  # Metric categories for Blob, Queue, Table, File
+  # File Service Log Categories
+  log {
+    category = "FileOperation"
+    enabled  = true
+    retention_policy {
+      enabled = false
+      days    = 0
+    }
+  }
+
+  # Metrics Categories for all services (Blob, Queue, Table, File)
   metrics {
     category = "Transaction"
     enabled  = true
@@ -86,7 +96,7 @@ resource "azurerm_monitor_diagnostic_setting" "storage_diagnostic" {
   }
 
   metrics {
-    category = "Latency"
+    category = "Ingress"
     enabled  = true
     retention_policy {
       enabled = false
@@ -104,44 +114,7 @@ resource "azurerm_monitor_diagnostic_setting" "storage_diagnostic" {
   }
 
   metrics {
-    category = "Ingress"
-    enabled  = true
-    retention_policy {
-      enabled = false
-      days    = 0
-    }
-  }
-
-  # Metrics for specific services
-  metrics {
-    category = "BlobCapacity"
-    enabled  = true
-    retention_policy {
-      enabled = false
-      days    = 0
-    }
-  }
-
-  metrics {
-    category = "QueueCapacity"
-    enabled  = true
-    retention_policy {
-      enabled = false
-      days    = 0
-    }
-  }
-
-  metrics {
-    category = "TableCapacity"
-    enabled  = true
-    retention_policy {
-      enabled = false
-      days    = 0
-    }
-  }
-
-  metrics {
-    category = "FileCapacity"
+    category = "Latency"
     enabled  = true
     retention_policy {
       enabled = false
@@ -151,28 +124,33 @@ resource "azurerm_monitor_diagnostic_setting" "storage_diagnostic" {
 }
 ```
 
-### Explanation of the Changes:
-
-- **Log Categories**:
-  - Added `AuditLogs` and `AllLogs`, which correspond to the groupings you see in the portal under diagnostic settings.
-  - Each of these logs (e.g., `StorageRead`, `StorageWrite`, `StorageDelete`) corresponds to the specific actions you mentioned, ensuring all are enabled.
-
-- **Metric Categories**:
-  - The metrics categories include `Transaction`, `Capacity`, `Availability`, `Latency`, `Ingress`, and `Egress`, which are standard metrics for monitoring Azure Storage services.
-  - Also added specific capacity metrics for blob, queue, table, and file services (`BlobCapacity`, `QueueCapacity`, `TableCapacity`, and `FileCapacity`), which match what you mentioned seeing in the Azure portal.
-
-### How It Maps to Portal:
+### Breakdown by Service:
 
 - **Blob Service**:
-  - Logs: `StorageRead`, `StorageWrite`, `StorageDelete`, `AuditLogs`, and `AllLogs`.
-  - Metrics: `Transaction`, `Capacity`, `BlobCapacity`, etc.
+  - **Logs**: `StorageRead`, `StorageWrite`, `StorageDelete`
+  - **Metrics**: `Transaction`, `Capacity`, `Availability`, `Ingress`, `Egress`, `Latency`
 
-- **Queue, Table, File Services**:
-  - The relevant logs and metrics for each of these services are covered by categories like `Transaction` and `Capacity` for Queue, Table, and File.
+- **Queue Service**:
+  - **Logs**: `QueueOperation`
+  - **Metrics**: Shared with Blob (`Transaction`, `Capacity`, `Availability`, `Ingress`, `Egress`, `Latency`)
 
-### Apply the Changes:
-1. Ensure the variable `log_analytics_workspace_id` is defined and provided in your `terraform.tfvars`.
-2. Run `terraform plan` to verify the changes.
-3. Run `terraform apply` to implement the diagnostic settings for the storage account.
+- **Table Service**:
+  - **Logs**: `TableOperation`
+  - **Metrics**: Shared with Blob (`Transaction`, `Capacity`, `Availability`, `Ingress`, `Egress`, `Latency`)
 
-This update will ensure that **all logs and metrics** for blob, queue, table, and file services are covered and sent to your Log Analytics workspace.
+- **File Service**:
+  - **Logs**: `FileOperation`
+  - **Metrics**: Shared with Blob (`Transaction`, `Capacity`, `Availability`, `Ingress`, `Egress`, `Latency`)
+
+### Explanation:
+- **Log Categories**:
+  - For **Queue**, **Table**, and **File** services, the relevant logs are `QueueOperation`, `TableOperation`, and `FileOperation`. These logs track read, write, and delete operations for each service.
+  
+- **Metric Categories**:
+  - Common metric categories like `Transaction`, `Capacity`, `Availability`, `Ingress`, `Egress`, and `Latency` are shared across Blob, Queue, Table, and File services. This ensures that performance metrics for all services are captured.
+
+### What this setup does:
+- This covers diagnostic settings for **all four services** (Blob, Queue, Table, File) for both **logs** and **metrics**.
+- These logs and metrics are sent to your Log Analytics workspace specified by `var.log_analytics_workspace_id`.
+  
+By adding these log categories and metric categories, the diagnostic settings will now fully cover the **Queue**, **Table**, and **File** services in addition to **Blob**, just like you see in the Azure portal.
