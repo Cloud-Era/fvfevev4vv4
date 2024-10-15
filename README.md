@@ -1,25 +1,17 @@
-The issue you're experiencing is likely due to the way Azure generates the Network Interface (NIC) name for Private Endpoints. The naming convention can be slightly different from what we initially assumed. Let's try a different approach to get the correct NIC name:
+I apologize for the confusion. You're correct that the `azurerm_private_endpoint` data source is not available in the current version of the Azure provider. Let's modify our approach to work with the available resources and data sources.
 
-1. First, let's modify the data source to fetch the NIC directly from the private endpoint:
-
-```hcl
-data "azurerm_private_endpoint" "kv_pe" {
-  name                = azurerm_private_endpoint.kv_pe.name
-  resource_group_name = var.resource_group_name
-}
-
-data "azurerm_network_interface" "kv_pe_nic" {
-  name                = element(data.azurerm_private_endpoint.kv_pe.network_interface, 0).name
-  resource_group_name = var.resource_group_name
-}
-```
-
-2. Then, update the diagnostic setting resource:
+Instead of using a data source for the private endpoint, we can directly reference the network interface from the `azurerm_private_endpoint` resource. Here's an updated version of the code that should work:
 
 ```hcl
+# This assumes you have already created the private endpoint resource
+resource "azurerm_private_endpoint" "kv_pe" {
+  # ... (your existing configuration)
+}
+
+# Directly reference the network interface from the private endpoint resource
 resource "azurerm_monitor_diagnostic_setting" "kv_pe_nic_diagnostic" {
-  name                       = format("%s-nic-diagnostic", azurerm_private_endpoint.kv_pe.name)
-  target_resource_id         = data.azurerm_network_interface.kv_pe_nic.id
+  name               = format("%s-nic-diagnostic", azurerm_private_endpoint.kv_pe.name)
+  target_resource_id = azurerm_private_endpoint.kv_pe.network_interface[0].id
   log_analytics_workspace_id = var.central_law_workspace_id
 
   metric {
@@ -35,26 +27,20 @@ resource "azurerm_monitor_diagnostic_setting" "kv_pe_nic_diagnostic" {
 }
 ```
 
-This approach should work because:
+Key changes:
 
-1. We're first fetching the private endpoint data, which includes information about its network interfaces.
-2. We're then using that data to get the exact name of the NIC associated with the private endpoint.
-3. This method doesn't rely on constructing the NIC name manually, which can be error-prone due to Azure's naming conventions.
+1. We've removed the data sources for both the private endpoint and the network interface.
+2. We're now directly referencing the network interface ID from the `azurerm_private_endpoint` resource.
+3. The `target_resource_id` is set to `azurerm_private_endpoint.kv_pe.network_interface.id`, which should give us the ID of the first (and typically only) network interface associated with the private endpoint.
 
-Make sure to place these resources after the `azurerm_private_endpoint` resource in your configuration, and ensure that `var.resource_group_name` and `var.central_law_workspace_id` are correctly defined.
+This approach eliminates the need for separate data sources and should work with the current version of the Azure provider.
 
-If you're still encountering issues, you might want to:
+Make sure that:
+1. The `azurerm_private_endpoint` resource is properly defined in your configuration.
+2. The `var.central_law_workspace_id` is correctly set to your Log Analytics Workspace ID.
+3. This diagnostic setting resource is placed after the private endpoint resource in your configuration to ensure proper dependency management.
 
-1. Double-check that the private endpoint is being created successfully.
-2. Verify that you have the necessary permissions to access the network interface.
-3. Use `terraform console` to inspect the values of `azurerm_private_endpoint.kv_pe.name` and `var.resource_group_name` to ensure they're correct.
-4. Consider adding a `depends_on` block to ensure the data sources are only queried after the private endpoint is fully created:
-
-```hcl
-depends_on = [azurerm_private_endpoint.kv_pe]
-```
-
-Remember to run `terraform init` after making these changes to ensure any new provider configurations are downloaded.
+If you're still encountering issues, please provide more details about the specific error message you're seeing, and I'll be happy to help further.
 
 Citations:
 [1] https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/11902716/24b993c6-2160-41d3-8935-096be4ea0e36/paste.txt
