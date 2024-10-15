@@ -1,122 +1,211 @@
-The `json.decoder.JSONDecodeError: Expecting value: line 1 column 1` error usually occurs when the response from the API is empty or not valid JSON. In the case of fetching the `package.json`, it might be that the request didn't return a valid response.
+To document the workflow for the Azure Landing Zone project effectively, we'll break down the overall architecture into separate workflows as described: 
 
-### Steps to Diagnose and Fix the Issue
+1. **System Resource Group Workflow**
+   - **Purpose**: Create the foundational infrastructure components, such as virtual networks (VNet), subnets, route tables, Network Security Groups (NSG), and VNet peering.
+   - **Components**:
+     - **Resource Group (Sys-RG)**: A dedicated system resource group to house core networking components.
+     - **Virtual Network (VNet)**: Define the IP space and address range for your network. This VNet will contain multiple subnets.
+     - **Subnets**: Each VNet will have subnets, separated for different purposes like data, app, and public subnets.
+     - **Route Tables**: Custom route tables for subnets to manage network traffic.
+     - **Network Security Group (NSG)**: For securing subnets by defining inbound and outbound traffic rules.
+     - **VNet Peering**: Enables communication between VNets across different resource groups or regions.
+   
+   - **Key Steps**:
+     1. Create the `System Resource Group`.
+     2. Deploy the `Virtual Network`.
+     3. Create the necessary `Subnets`.
+     4. Configure the `Route Tables` and associate them with the subnets.
+     5. Apply the `NSG` to secure each subnet.
+     6. Set up `VNet Peering` if cross-region or cross-group networking is needed.
 
-1. **Check API Response**: Before trying to parse the JSON response, we should print the raw response to see what it looks like. This will help us determine if the API is returning an error or if the file doesn’t exist.
+   - **Outputs**:
+     - Virtual Network and Subnets.
+     - Route tables and NSGs applied to subnets.
+     - VNet peering in place.
 
-2. **Error Handling**: Improve error handling to manage situations where the `package.json` file is not found or when the API rate limits are hit.
+2. **Furnishing Resource Group Workflow**
+   - **Purpose**: Provision higher-level services like Azure Key Vault, Storage Accounts, API Management, Azure Data Factory (ADF), and other service-related resources.
+   - **Components**:
+     - **Resource Group (App-RG)**: Dedicated for application-related services.
+     - **Azure Key Vault (AKV)**: Manage secrets, keys, and certificates for secure access.
+     - **Storage Account (SA)**: For blob storage, queues, and other data.
+     - **API Management (APIM)**: For API gateways and backend services management.
+     - **Application Insights (AppInsight)**: For monitoring application performance.
+     - **Azure Data Factory (ADF)**: For data integration, ETL pipelines.
+     - **Private Endpoints**: Secure connections to PaaS services.
+     - **Managed Identity**: Identity management for resources without storing credentials.
+     - **Log Analytics Workspace**: Centralized logging and monitoring solution.
+     - **Action Group**: Notification groups for alerting and incident management.
 
-Here’s the modified code to add debugging information:
+   - **Key Steps**:
+     1. Create the `Application Resource Group`.
+     2. Deploy `Azure Key Vault`.
+     3. Set up `Storage Account`.
+     4. Deploy `API Management` and configure policies, backend services, etc.
+     5. Provision `Application Insights` for application monitoring.
+     6. Deploy `Azure Data Factory` and configure its data flows.
+     7. Create `Private Endpoints` for secure access to the above services.
+     8. Assign `Managed Identity` to services where required.
+     9. Set up `Log Analytics Workspace` for centralized monitoring.
+     10. Configure `Action Groups` for alerting.
 
-```python
-import asyncio
-import aiohttp
-import csv
-import os
-import json  # Importing the json module
+   - **Outputs**:
+     - Key vault, storage, APIM, ADF, AppInsight, and other resources.
+     - Private endpoints configured for these services.
+     - Managed identity setup.
+     - Centralized log monitoring and alert management.
 
-# Hard-coded GitHub token (replace with your actual token)
-GITHUB_TOKEN = "your_github_token_here"
+3. **Subscription-Level Workflow**
+   - **Purpose**: Manage subscription-wide configurations, including policies, RBAC, tags, and diagnostics.
+   - **Components**:
+     - **Role-Based Access Control (RBAC)**: Define roles and permissions for users and services at the subscription level.
+     - **Tags**: Apply centralized tagging for resources (e.g., owner, cost center, environment).
+     - **Diagnostics**: Enable diagnostics across all resources for monitoring.
+     - **Policies**: Apply subscription-wide policies for governance and compliance (e.g., enforce resource tagging, location restrictions).
+     - **DNS Configuration**: If required, configure subscription-level DNS servers (e.g., custom DNS servers).
 
-# Variable to easily switch between "EoNID" and "eon_id"
-ID_PROPERTY_NAME = "eon_id"  # Change this to "EoNID" if needed
+   - **Key Steps**:
+     1. Configure `Role-Based Access Control (RBAC)` for managing users and roles across resources.
+     2. Apply `Tags` at the subscription level for cost management, environment identification, and ownership.
+     3. Enable `Diagnostics` for all resources (e.g., VMs, AKV, storage) to send logs to the Log Analytics Workspace.
+     4. Apply governance `Policies` (e.g., enforce tagging, limit allowed regions).
+     5. Configure custom `DNS Servers` if required for the subscription.
 
-# Repository details
-ORG = "cloud-era"  # Your organization name
-REPO = "your_repo_name_here"  # Specify the repository name
+   - **Outputs**:
+     - RBAC roles assigned.
+     - Consistent tagging across all resources.
+     - Diagnostics data being collected.
+     - Policies enforcing compliance.
+     - Subscription-level DNS settings applied (if applicable).
 
-# Output CSV file path
-OUTPUT_CSV = f"{REPO}_angular_report.csv"
+### Documentation Template for Terraform Configurations
 
-# Define Angular version to check
-ANGULAR_VERSION = 12
+#### System Resource Group Workflow
 
-async def get_package_json(session, org, repo):
-    headers = {
-        "Authorization": f"token {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28"
-    }
+```hcl
+# Create System Resource Group
+resource "azurerm_resource_group" "sys_rg" {
+  name     = var.sys_rg_name
+  location = var.location
+}
 
-    # URL to fetch package.json file
-    package_json_url = f"https://api.github.com/repos/{org}/{repo}/contents/package.json"
-    async with session.get(package_json_url, headers=headers) as response:
-        if response.status == 200:
-            content = await response.json()
-            # Decode the base64 content
-            package_json_content = json.loads(content['content'])
-            return package_json_content
-        else:
-            print(f"Error fetching package.json for {repo}: {response.status}")
-            print(await response.text())  # Print raw response for debugging
-            return None
+# Create Virtual Network
+resource "azurerm_virtual_network" "vnet" {
+  name                = var.vnet_name
+  address_space       = var.vnet_address_space
+  location            = azurerm_resource_group.sys_rg.location
+  resource_group_name = azurerm_resource_group.sys_rg.name
+}
 
-async def get_repo_id(session, org, repo):
-    headers = {
-        "Authorization": f"token {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28"
-    }
+# Create Subnets
+resource "azurerm_subnet" "subnet" {
+  for_each = var.subnets
+  name                 = each.key
+  resource_group_name  = azurerm_virtual_network.vnet.resource_group_name
+  virtual_network_name = azurerm_virtual_network.vnet.name
+  address_prefixes     = each.value
+}
 
-    properties_url = f"https://api.github.com/repos/{org}/{repo}/properties/values"
-    async with session.get(properties_url, headers=headers) as response:
-        if response.status == 200:
-            properties_data = await response.json()
-            for prop in properties_data:
-                if prop.get("property_name") == ID_PROPERTY_NAME:
-                    return prop.get("value")
-            print(f"{ID_PROPERTY_NAME} not found for {repo}")
-        else:
-            print(f"Error fetching properties for {repo}: {response.status}")
+# Create Network Security Group
+resource "azurerm_network_security_group" "nsg" {
+  name                = var.nsg_name
+  location            = azurerm_resource_group.sys_rg.location
+  resource_group_name = azurerm_resource_group.sys_rg.name
+}
 
-    return None
+# Create Route Table
+resource "azurerm_route_table" "route_table" {
+  name                = var.route_table_name
+  location            = azurerm_resource_group.sys_rg.location
+  resource_group_name = azurerm_resource_group.sys_rg.name
+}
 
-def check_angular_version(dependencies):
-    # Check if Angular 12 or above is listed in the dependencies
-    for package, version in dependencies.items():
-        if package.startswith("@angular/"):
-            # Extract the major version from version string
-            version_parts = version.split('.')
-            if len(version_parts) > 0 and version_parts[0].isdigit():
-                major_version = int(version_parts[0])  # Extract major version
-                if major_version >= ANGULAR_VERSION:
-                    return True
-    return False
-
-async def main():
-    async with aiohttp.ClientSession() as session:
-        print(f"Fetching package.json and {ID_PROPERTY_NAME} for {ORG}/{REPO}...")
-        
-        package_json = await get_package_json(session, ORG, REPO)
-        id_value = await get_repo_id(session, ORG, REPO)
-
-        if package_json is not None and "dependencies" in package_json:
-            if check_angular_version(package_json["dependencies"]):
-                print(f"Angular {ANGULAR_VERSION} or above found in {ORG}/{REPO}.")
-                with open(OUTPUT_CSV, mode='w', newline='', encoding='utf-8') as csvfile:
-                    fieldnames = ['repository', 'eon_id']
-                    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-                    writer.writeheader()
-                    writer.writerow({
-                        'repository': f"{ORG}/{REPO}",
-                        'eon_id': id_value
-                    })
-                print(f"Report generated: '{OUTPUT_CSV}'")
-            else:
-                print(f"No Angular {ANGULAR_VERSION} or above found in {ORG}/{REPO}.")
-        else:
-            print(f"Package.json not found or does not contain dependencies for {ORG}/{REPO}.")
-
-if __name__ == "__main__":
-    asyncio.run(main())
+# VNet Peering
+resource "azurerm_virtual_network_peering" "vnet_peering" {
+  name                      = "peer-vnet"
+  resource_group_name       = azurerm_virtual_network.vnet.resource_group_name
+  virtual_network_name      = azurerm_virtual_network.vnet.name
+  remote_virtual_network_id = var.remote_vnet_id
+}
 ```
 
-### Key Changes
-- **Debugging Output**: The line `print(await response.text())` is added to display the raw response when there’s an error fetching the `package.json`. This should give you insight into what the API is returning (e.g., error message or other unexpected content).
+#### Furnishing Resource Group Workflow
 
-### Next Steps
-1. **Run the Modified Script**: After updating the script, run it again and check the output for any additional error messages or information that can help diagnose the issue.
-2. **Verify the Repository Name**: Make sure that the `REPO` variable has the correct name of the repository you want to analyze.
-3. **Check Permissions**: Ensure that the GitHub token has the necessary permissions to access the repository contents.
+```hcl
+# Create Application Resource Group
+resource "azurerm_resource_group" "app_rg" {
+  name     = var.app_rg_name
+  location = var.location
+}
 
-If the issue persists or if you see specific error messages in the output, let me know!
+# Azure Key Vault
+resource "azurerm_key_vault" "akv" {
+  name                = var.akv_name
+  location            = azurerm_resource_group.app_rg.location
+  resource_group_name = azurerm_resource_group.app_rg.name
+  tenant_id           = data.azurerm_client_config.current.tenant_id
+}
+
+# Storage Account
+resource "azurerm_storage_account" "sa" {
+  name                     = var.sa_name
+  resource_group_name      = azurerm_resource_group.app_rg.name
+  location                 = azurerm_resource_group.app_rg.location
+  account_tier             = "Standard"
+  account_replication_type = "LRS"
+}
+
+# API Management
+resource "azurerm_api_management" "apim" {
+  name                = var.apim_name
+  location            = azurerm_resource_group.app_rg.location
+  resource_group_name = azurerm_resource_group.app_rg.name
+}
+
+# Application Insights
+resource "azurerm_application_insights" "app_insights" {
+  name                = var.appinsight_name
+  location            = azurerm_resource_group.app_rg.location
+  resource_group_name = azurerm_resource_group.app_rg.name
+  application_type    = "web"
+}
+
+# Azure Data Factory
+resource "azurerm_data_factory" "adf" {
+  name                = var.adf_name
+  location            = azurerm_resource_group.app_rg.location
+  resource_group_name = azurerm_resource_group.app_rg.name
+}
+
+# Private Endpoint
+resource "azurerm_private_endpoint" "pe" {
+  name                = var.pe_name
+  location            = azurerm_resource_group.app_rg.location
+  resource_group_name = azurerm_resource_group.app_rg.name
+  subnet_id           = azurerm_subnet.subnet.id
+}
+```
+
+#### Subscription-Level Workflow
+
+```hcl
+# Assign RBAC Roles
+resource "azurerm_role_assignment" "rbac" {
+  principal_id   = var.principal_id
+  role_definition_name = "Contributor"
+  scope          = data.azurerm_subscription.primary.id
+}
+
+# Apply Centralized Tagging
+resource "azurerm_tag" "tags" {
+  key   = "Environment"
+  value = var.environment
+}
+
+# Enable Diagnostics
+resource "azurerm_monitor_diagnostic_setting" "diagnostics" {
+  name               = "diags"
+  target_resource_id = azurerm_storage_account.sa.id
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.law.id
+  logs {
+    category =
