@@ -1,21 +1,44 @@
-To ensure diagnostic settings are enabled for **Queue**, **Table**, and **File** services, alongside **Blob**, you need to explicitly define logs and metrics for each of these services. Here's how you can update the `azurerm_monitor_diagnostic_setting` resource to include the logs and metrics for **Queue**, **Table**, and **File** services.
+To enable diagnostic settings for blob, queue, table, and file services in your Azure Storage Account, you need to create separate diagnostic settings for each service. The current configuration only enables diagnostics for the storage account itself. Here's how you can modify your code to include diagnostic settings for all services:
 
-### Full Diagnostic Settings for Storage Account (Blob, Queue, Table, File)
+1. First, add the following diagnostic settings for the storage account:
 
 ```hcl
-resource "azurerm_monitor_diagnostic_setting" "storage_diagnostic" {
-  name               = format("%s-diagnostics", azurerm_storage_account.storageaccount.name)
+resource "azurerm_monitor_diagnostic_setting" "storage_account_diagnostic" {
+  name               = format("%s-sa-diagnostics", azurerm_storage_account.storageaccount.name)
   target_resource_id = azurerm_storage_account.storageaccount.id
-
   log_analytics_workspace_id = var.log_analytics_workspace_id
 
-  # Blob Service Log Categories
+  metric {
+    category = "Transaction"
+    enabled  = true
+    retention_policy {
+      enabled = false
+    }
+  }
+
+  metric {
+    category = "Capacity"
+    enabled  = true
+    retention_policy {
+      enabled = false
+    }
+  }
+}
+```
+
+2. Then, add diagnostic settings for blob, queue, table, and file services:
+
+```hcl
+resource "azurerm_monitor_diagnostic_setting" "blob_diagnostic" {
+  name               = format("%s-blob-diagnostics", azurerm_storage_account.storageaccount.name)
+  target_resource_id = "${azurerm_storage_account.storageaccount.id}/blobServices/default"
+  log_analytics_workspace_id = var.log_analytics_workspace_id
+
   log {
     category = "StorageRead"
     enabled  = true
     retention_policy {
       enabled = false
-      days    = 0
     }
   }
 
@@ -24,7 +47,6 @@ resource "azurerm_monitor_diagnostic_setting" "storage_diagnostic" {
     enabled  = true
     retention_policy {
       enabled = false
-      days    = 0
     }
   }
 
@@ -33,124 +55,139 @@ resource "azurerm_monitor_diagnostic_setting" "storage_diagnostic" {
     enabled  = true
     retention_policy {
       enabled = false
-      days    = 0
     }
   }
 
-  # Queue Service Log Categories
-  log {
-    category = "QueueOperation"
-    enabled  = true
-    retention_policy {
-      enabled = false
-      days    = 0
-    }
-  }
-
-  # Table Service Log Categories
-  log {
-    category = "TableOperation"
-    enabled  = true
-    retention_policy {
-      enabled = false
-      days    = 0
-    }
-  }
-
-  # File Service Log Categories
-  log {
-    category = "FileOperation"
-    enabled  = true
-    retention_policy {
-      enabled = false
-      days    = 0
-    }
-  }
-
-  # Metrics Categories for all services (Blob, Queue, Table, File)
-  metrics {
+  metric {
     category = "Transaction"
     enabled  = true
     retention_policy {
       enabled = false
-      days    = 0
     }
   }
+}
 
-  metrics {
-    category = "Capacity"
+resource "azurerm_monitor_diagnostic_setting" "queue_diagnostic" {
+  name               = format("%s-queue-diagnostics", azurerm_storage_account.storageaccount.name)
+  target_resource_id = "${azurerm_storage_account.storageaccount.id}/queueServices/default"
+  log_analytics_workspace_id = var.log_analytics_workspace_id
+
+  log {
+    category = "StorageRead"
     enabled  = true
     retention_policy {
       enabled = false
-      days    = 0
     }
   }
 
-  metrics {
-    category = "Availability"
+  log {
+    category = "StorageWrite"
     enabled  = true
     retention_policy {
       enabled = false
-      days    = 0
     }
   }
 
-  metrics {
-    category = "Ingress"
+  log {
+    category = "StorageDelete"
     enabled  = true
     retention_policy {
       enabled = false
-      days    = 0
     }
   }
 
-  metrics {
-    category = "Egress"
+  metric {
+    category = "Transaction"
     enabled  = true
     retention_policy {
       enabled = false
-      days    = 0
+    }
+  }
+}
+
+resource "azurerm_monitor_diagnostic_setting" "table_diagnostic" {
+  name               = format("%s-table-diagnostics", azurerm_storage_account.storageaccount.name)
+  target_resource_id = "${azurerm_storage_account.storageaccount.id}/tableServices/default"
+  log_analytics_workspace_id = var.log_analytics_workspace_id
+
+  log {
+    category = "StorageRead"
+    enabled  = true
+    retention_policy {
+      enabled = false
     }
   }
 
-  metrics {
-    category = "Latency"
+  log {
+    category = "StorageWrite"
     enabled  = true
     retention_policy {
       enabled = false
-      days    = 0
+    }
+  }
+
+  log {
+    category = "StorageDelete"
+    enabled  = true
+    retention_policy {
+      enabled = false
+    }
+  }
+
+  metric {
+    category = "Transaction"
+    enabled  = true
+    retention_policy {
+      enabled = false
+    }
+  }
+}
+
+resource "azurerm_monitor_diagnostic_setting" "file_diagnostic" {
+  name               = format("%s-file-diagnostics", azurerm_storage_account.storageaccount.name)
+  target_resource_id = "${azurerm_storage_account.storageaccount.id}/fileServices/default"
+  log_analytics_workspace_id = var.log_analytics_workspace_id
+
+  log {
+    category = "StorageRead"
+    enabled  = true
+    retention_policy {
+      enabled = false
+    }
+  }
+
+  log {
+    category = "StorageWrite"
+    enabled  = true
+    retention_policy {
+      enabled = false
+    }
+  }
+
+  log {
+    category = "StorageDelete"
+    enabled  = true
+    retention_policy {
+      enabled = false
+    }
+  }
+
+  metric {
+    category = "Transaction"
+    enabled  = true
+    retention_policy {
+      enabled = false
     }
   }
 }
 ```
 
-### Breakdown by Service:
+These configurations will enable diagnostic settings for the storage account itself, as well as for blob, queue, table, and file services. Each service will have its own diagnostic setting, allowing you to collect logs and metrics for read, write, and delete operations, as well as transaction metrics.
 
-- **Blob Service**:
-  - **Logs**: `StorageRead`, `StorageWrite`, `StorageDelete`
-  - **Metrics**: `Transaction`, `Capacity`, `Availability`, `Ingress`, `Egress`, `Latency`
+Make sure to replace `var.log_analytics_workspace_id` with the actual Log Analytics Workspace ID where you want to send the diagnostic data.
 
-- **Queue Service**:
-  - **Logs**: `QueueOperation`
-  - **Metrics**: Shared with Blob (`Transaction`, `Capacity`, `Availability`, `Ingress`, `Egress`, `Latency`)
+Also, note that the retention policy is set to `enabled = false` for all logs and metrics. If you want to enable retention, you can set `enabled = true` and specify the number of days to retain the data using the `days` parameter.
 
-- **Table Service**:
-  - **Logs**: `TableOperation`
-  - **Metrics**: Shared with Blob (`Transaction`, `Capacity`, `Availability`, `Ingress`, `Egress`, `Latency`)
-
-- **File Service**:
-  - **Logs**: `FileOperation`
-  - **Metrics**: Shared with Blob (`Transaction`, `Capacity`, `Availability`, `Ingress`, `Egress`, `Latency`)
-
-### Explanation:
-- **Log Categories**:
-  - For **Queue**, **Table**, and **File** services, the relevant logs are `QueueOperation`, `TableOperation`, and `FileOperation`. These logs track read, write, and delete operations for each service.
-  
-- **Metric Categories**:
-  - Common metric categories like `Transaction`, `Capacity`, `Availability`, `Ingress`, `Egress`, and `Latency` are shared across Blob, Queue, Table, and File services. This ensures that performance metrics for all services are captured.
-
-### What this setup does:
-- This covers diagnostic settings for **all four services** (Blob, Queue, Table, File) for both **logs** and **metrics**.
-- These logs and metrics are sent to your Log Analytics workspace specified by `var.log_analytics_workspace_id`.
-  
-By adding these log categories and metric categories, the diagnostic settings will now fully cover the **Queue**, **Table**, and **File** services in addition to **Blob**, just like you see in the Azure portal.
+Citations:
+[1] https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/11902716/24b993c6-2160-41d3-8935-096be4ea0e36/paste.txt
+[2] https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/11902716/9117b432-ef6a-4fe3-bc80-1445dd0166f7/paste.txt
